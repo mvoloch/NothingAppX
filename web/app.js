@@ -508,6 +508,10 @@ async function listarEntradas() {
 /** A entrada escolhida e' o microfone de um fone Bluetooth? */
 const entradaEhFone = (rotulo) =>
   /hands-?free|headset|buds|\bear\b/i.test(rotulo || "");
+
+/** A entrada parece um cabo virtual / loopback (a unica que faz sentido)? */
+const entradaEhCabo = (rotulo) =>
+  /cable|vb-?audio|virtual|voicemeeter|loopback|stereo mix|mixagem/i.test(rotulo || "");
 $("motor-entrada").addEventListener("focus", listarEntradas);
 
 function desenharMedidor() {
@@ -528,6 +532,7 @@ $("motor-ligar").addEventListener("click", async () => {
     clearInterval(medidorTimer); medidorTimer = null;
     await motor.desligar();
     $("motor-medidor").hidden = true;
+    $("motor-ganhos").textContent = "";
     btn.textContent = t("motor.ligar");
     return;
   }
@@ -538,11 +543,26 @@ $("motor-ligar").addEventListener("click", async () => {
     await listarEntradas();               // com a permissão dada, vêm os nomes
     // Capturamos o microfone do proprio fone? Isso mata o codec (maos-livres).
     // Melhor desligar e avisar do que tocar em qualidade de telefone.
-    if (entradaEhFone(motor.rotuloEntrada())) {
+    const rotulo = motor.rotuloEntrada();
+    if (entradaEhFone(rotulo)) {
       await motor.desligar();
       alert(t("motor.entradaErrada"));
       return;
     }
+    // Microfone de verdade? Entao nao ha' audio do sistema para corrigir —
+    // so' entraria o som da sala dentro do fone. Recusar e ensinar o cabo.
+    if (rotulo && !entradaEhCabo(rotulo)) {
+      await motor.desligar();
+      alert(t("motor.semCabo"));
+      return;
+    }
+    // Quanto o SEU perfil pede, por banda: se for quase zero, nao ha' mesmo
+    // diferenca para ouvir — e isso merece estar escrito, nao suposto.
+    const porLado = { esquerda: [0, 0, 0], direita: [0, 0, 0] };
+    for (const b of motor.bandas)
+      porLado[b.lado][b.banda] = Math.round(b.db * window.motorAudio.FRACAO_GANHO * 10) / 10;
+    $("motor-ganhos").textContent = t("motor.repouso",
+      { e: porLado.esquerda.join(" / "), d: porLado.direita.join(" / ") });
     $("motor-medidor").hidden = false;
     medidorTimer = setInterval(desenharMedidor, 120);
     btn.textContent = t("motor.desligar");

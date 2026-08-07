@@ -55,7 +55,7 @@ const DB_MAXIMO = -12;      // teto de seguranca — nao chega perto de doer
 /* Metodo: escada de Hughson-Westlake modificada, o padrao clinico desde 1944
  * e o mesmo desenho dos testes da Samsung/Apple/Audiodo — bipes PULSADOS em
  * nivel FIXO e resposta binaria (ouvi / nao ouvi). Ouviu: desce 10 dB. Nao
- * ouviu: sobe 5 dB. Limiar = nivel confirmado 2 vezes durante subidas.
+ * ouviu: sobe 5 dB. Limiar = resposta durante uma subida.
  *
  * A primeira versao usava rampa continua ("toque quando ouvir"), e o proprio
  * usuario apontou o defeito: o tempo de reacao e a atencao entram na medida.
@@ -65,12 +65,17 @@ const DB_MAXIMO = -12;      // teto de seguranca — nao chega perto de doer
  *
  * Passo que estoura o teto sem resposta continua censurado: teto + penalidade,
  * marcado como sem resposta — o limiar real esta' acima do alcance do teste. */
+/* Versao de triagem, encurtada apos uso real: a regra clinica completa (duas
+ * confirmacoes na subida) repetia a mesma frequencia vezes demais para um
+ * teste de consumo. Aqui a PRIMEIRA resposta na subida fecha o limiar — e a
+ * resposta "nao ouvi" e' automatica: se a janela passar sem clique, seguimos.
+ * E' o desenho dos audiometros automatizados de triagem. */
 const NIVEL_INICIAL = -40;  // primeiro bipe claramente audivel para audicao tipica
 const DESCE_DB = 10;
 const SOBE_DB = 5;
-const CONFIRMACOES = 2;     // "sim" na subida, duas vezes no mesmo nivel
-const MAX_APRESENTACOES = 18;  // trava de seguranca por passo
-const PULSOS = 3;
+const CONFIRMACOES = 1;     // primeira resposta na subida ja' e' o limiar
+const MAX_APRESENTACOES = 12;  // trava de seguranca por passo
+const PULSOS = 3;           // ajuste de campo: 2 bipes eram curtos demais para julgar
 const PULSO_S = 0.5;       // ajuste de campo: 0.22 era rapido demais para julgar
 const INTERVALO_S = 0.35;
 const RESPIRO_S = 0.35;    // silencio antes do primeiro bipe de cada apresentacao

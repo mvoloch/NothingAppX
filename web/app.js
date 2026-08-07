@@ -432,26 +432,29 @@ function mostrarPasso() {
   $("audio-barra").style.width = "0%";
 }
 
-/* Uma resposta por apresentacao. Sem esta trava, dois cliques rapidos
- * disparavam duas rodadas em paralelo e os bipes voltavam sobrepostos. */
+/* Um botao so': «Ouvi». Se a janela de resposta passar sem clique, conta
+ * como "nao ouvi" e o teste segue sozinho — sugestao do proprio usuario, e
+ * o desenho dos audiometros automatizados. A trava de uma-resposta-por-
+ * apresentacao continua: clique fora de hora e' ignorado. */
 let aguardandoResposta = false;
+let temporizadorJanela = null;
+const JANELA_RESPOSTA_MS = 1500;
 
 async function rodarPasso() {
   mostrarPasso();
-  // "Nao ouvi" so vale depois dos bipes acabarem; "Ouvi" vale a qualquer hora
-  $("audio-nao-ouvi").disabled = true;
   aguardandoResposta = true;
   await teste.apresentar((fracao) => {
     $("audio-barra").style.width = `${Math.round(fracao * 100)}%`;
   });
-  if (aguardandoResposta) $("audio-nao-ouvi").disabled = false;
+  if (!aguardandoResposta) return;      // ja' respondeu durante os bipes
+  temporizadorJanela = setTimeout(() => responderPasso(false), JANELA_RESPOSTA_MS);
 }
 
 function responderPasso(ouviu) {
   if (!aguardandoResposta || teste.terminou) return;
   aguardandoResposta = false;
+  clearTimeout(temporizadorJanela); temporizadorJanela = null;
   teste.parar();
-  $("audio-nao-ouvi").disabled = true;
   const { fechouPasso } = teste.responder(ouviu);
   if (fechouPasso && teste.terminou) { mostrarResultado(); return; }
   setTimeout(rodarPasso, 450);
@@ -631,7 +634,6 @@ $("sis-csv").addEventListener("click", () => window.perfilSistema.baixar(
 
 $("audio-comecar").addEventListener("click", () => { faseAudio("teste"); rodarPasso(); });
 $("audio-ouvi").addEventListener("click", () => responderPasso(true));
-$("audio-nao-ouvi").addEventListener("click", () => responderPasso(false));
 $("audio-refazer").addEventListener("click", () => { teste.reiniciar(); faseAudio("inicio"); });
 
 $("audio-aplicar").addEventListener("click", () => {

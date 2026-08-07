@@ -49,19 +49,30 @@
 const FREQUENCIAS = [250, 500, 1000, 2000, 4000, 8000];
 const ORELHAS = ["esquerda", "direita"];
 
-const DB_MINIMO = -75;      // onde cada tom comeca: inaudivel em qualquer volume
+const DB_MINIMO = -75;      // piso do teste: melhor que isso nao distinguimos
 const DB_MAXIMO = -12;      // teto de seguranca — nao chega perto de doer
-const SEGUNDOS_RAMPA = 7;   // subida lenta o bastante para o dedo acompanhar
 
-/* O TEMPO ate o toque E' a medida: a rampa sobe 9 dB/s, entao tocar mais tarde
- * = limiar mais alto = mais reforco naquela frequencia. O atraso de reacao do
- * dedo (~0,3 s ~ 3 dB) e' quase constante entre frequencias e some na
- * normalizacao pela media — o que sobra e' justamente a DIFERENCA entre elas.
+/* Metodo: escada de Hughson-Westlake modificada, o padrao clinico desde 1944
+ * e o mesmo desenho dos testes da Samsung/Apple/Audiodo — bipes PULSADOS em
+ * nivel FIXO e resposta binaria (ouvi / nao ouvi). Ouviu: desce 10 dB. Nao
+ * ouviu: sobe 5 dB. Limiar = nivel confirmado 2 vezes durante subidas.
  *
- * Passo que termina SEM toque e' outra historia: nao e' "ouvi no teto", e'
- * "nao ouvi ate onde o teste alcanca". A audiometria clinica anota isso como
- * "sem resposta" e trata o limiar como censurado (o real esta' acima do teto).
- * Usamos a convencao dela: teto + penalidade, e o passo fica marcado. */
+ * A primeira versao usava rampa continua ("toque quando ouvir"), e o proprio
+ * usuario apontou o defeito: o tempo de reacao e a atencao entram na medida.
+ * Com niveis fixos a resposta e' binaria e isso desaparece. Tons pulsados
+ * porque sao mais faceis de perceber no limiar (preferidos por 2/3 dos
+ * ouvintes na literatura de audiometria).
+ *
+ * Passo que estoura o teto sem resposta continua censurado: teto + penalidade,
+ * marcado como sem resposta — o limiar real esta' acima do alcance do teste. */
+const NIVEL_INICIAL = -40;  // primeiro bipe claramente audivel para audicao tipica
+const DESCE_DB = 10;
+const SOBE_DB = 5;
+const CONFIRMACOES = 2;     // "sim" na subida, duas vezes no mesmo nivel
+const MAX_APRESENTACOES = 18;  // trava de seguranca por passo
+const PULSOS = 3;
+const PULSO_S = 0.22;
+const INTERVALO_S = 0.24;
 const PENALIDADE_SEM_RESPOSTA = 6;
 
 class Audiometria {
@@ -72,6 +83,14 @@ class Audiometria {
       for (const hz of FREQUENCIAS) this.passos.push({ orelha, hz, limiar: null });
     this.indice = 0;
     this.tocando = null;
+    this._novaEscada();
+  }
+
+  _novaEscada() {
+    this.nivel = NIVEL_INICIAL;
+    this.subindo = false;
+    this.confirmacoes = new Map();   // nivel -> quantos "ouvi" durante subida
+    this.apresentacoes = 0;
   }
 
   get passo() { return this.passos[this.indice]; }
@@ -84,9 +103,9 @@ class Audiometria {
     return this.ctx;
   }
 
-  /** Toca o tom do passo atual subindo de volume. Resolve com o dB do momento
-   *  em que `parar()` for chamado, ou com DB_MAXIMO se a rampa terminar. */
-  async tocar(aoProgredir) {
+  /** Toca a apresentacao atual: PULSOS bipes no nivel FIXO da escada.
+   *  Resolve quando os bipes terminam, ou antes se `parar()` for chamado. */
+  async apresentar(aoProgredir) {
     const ctx = await this._contexto();
     const p = this.passo;
     const osc = ctx.createOscillator();
@@ -97,61 +116,98 @@ class Audiometria {
     osc.frequency.value = p.hz;
     pan.pan.value = p.orelha === "esquerda" ? -1 : 1;
 
-    const t0 = ctx.currentTime;
-    const g = (db) => Math.pow(10, db / 20);
-    vol.gain.setValueAtTime(g(DB_MINIMO), t0);
-    // rampa exponencial: em volume percebido ela sobe de forma uniforme
-    vol.gain.exponentialRampToValueAtTime(g(DB_MAXIMO), t0 + SEGUNDOS_RAMPA);
+    const t0 = ctx.currentTime + 0.05;
+    const g = Math.pow(10, this.nivel / 20);
+    const dur = PULSOS * PULSO_S + (PULSOS - 1) * INTERVALO_S;
+    vol.gain.setValueAtTime(0, ctx.currentTime);
+    for (let i = 0; i < PULSOS; i++) {
+      const ini = t0 + i * (PULSO_S + INTERVALO_S);
+      // 10 ms de subida/descida para o bipe nao estalar
+      vol.gain.setValueAtTime(0, ini);
+      vol.gain.linearRampToValueAtTime(g, ini + 0.01);
+      vol.gain.setValueAtTime(g, ini + PULSO_S - 0.01);
+      vol.gain.linearRampToValueAtTime(0, ini + PULSO_S);
+    }
 
     osc.connect(vol).connect(pan).connect(ctx.destination);
     osc.start();
+    osc.stop(t0 + dur + 0.05);
 
     return new Promise((resolve) => {
-      const encerrar = (db, ouvido) => {
+      const encerrar = () => {
         if (!this.tocando) return;
         this.tocando = null;
         clearInterval(relogio);
-        // corta com uma rampinha para nao estalar no ouvido
         vol.gain.cancelScheduledValues(ctx.currentTime);
-        vol.gain.setValueAtTime(vol.gain.value, ctx.currentTime);
-        vol.gain.exponentialRampToValueAtTime(g(DB_MINIMO), ctx.currentTime + 0.05);
-        osc.stop(ctx.currentTime + 0.08);
-        resolve({ db, ouvido });
+        vol.gain.setValueAtTime(0, ctx.currentTime);
+        try { osc.stop(ctx.currentTime + 0.02); } catch {}
+        resolve();
       };
-
-      const agora = () => {
-        const t = Math.min(SEGUNDOS_RAMPA, ctx.currentTime - t0);
-        return DB_MINIMO + ((DB_MAXIMO - DB_MINIMO) * t) / SEGUNDOS_RAMPA;
-      };
-
-      this.tocando = () => encerrar(agora(), true);
+      this.tocando = encerrar;
       const relogio = setInterval(() => {
         if (!this.tocando) return;
-        const db = agora();
-        aoProgredir?.((db - DB_MINIMO) / (DB_MAXIMO - DB_MINIMO));
-        if (ctx.currentTime - t0 >= SEGUNDOS_RAMPA) encerrar(DB_MAXIMO, false);
+        const f = Math.min(1, (ctx.currentTime - t0) / dur);
+        aoProgredir?.(Math.max(0, f));
+        if (f >= 1) encerrar();
       }, 60);
     });
   }
 
-  /** Chamado quando a pessoa diz que ouviu. */
+  /** Interrompe a apresentacao em curso (ex.: a pessoa ja respondeu). */
   parar() { this.tocando?.(); }
 
-  /** Registra o limiar e avanca. Devolve true se ainda ha' passos. */
-  registrar(db, ouvido = true) {
-    const p = this.passos[this.indice];
-    p.ouvido = ouvido;
-    p.limiar = ouvido ? db : DB_MAXIMO + PENALIDADE_SEM_RESPOSTA;
-    this.indice++;
-    return !this.terminou;
+  /** Resposta binaria da pessoa ao bipe. Move a escada; quando um limiar
+   *  fecha, registra e avanca ao proximo passo.
+   *  Devolve { fechouPasso } — e `terminou` diz se o teste todo acabou. */
+  responder(ouviu) {
+    this.apresentacoes++;
+    let fim = null;                       // { limiar, ouvido }
+
+    if (ouviu) {
+      if (this.subindo) {
+        const n = (this.confirmacoes.get(this.nivel) || 0) + 1;
+        this.confirmacoes.set(this.nivel, n);
+        if (n >= CONFIRMACOES) fim = { limiar: this.nivel, ouvido: true };
+        else { this.subindo = false; this.nivel -= DESCE_DB; }
+      } else if (this.nivel - DESCE_DB < DB_MINIMO) {
+        fim = { limiar: DB_MINIMO, ouvido: true };   // ouve melhor que o piso
+      } else {
+        this.nivel -= DESCE_DB;
+      }
+    } else {
+      this.subindo = true;
+      if (this.nivel + SOBE_DB > DB_MAXIMO) {
+        fim = { limiar: DB_MAXIMO + PENALIDADE_SEM_RESPOSTA, ouvido: false };
+      } else {
+        this.nivel += SOBE_DB;
+      }
+    }
+
+    if (!fim && this.apresentacoes >= MAX_APRESENTACOES) {
+      // respostas inconsistentes: usa o menor nivel ouvido na subida, se houve
+      const sims = [...this.confirmacoes.keys()];
+      fim = sims.length
+        ? { limiar: Math.min(...sims), ouvido: true }
+        : { limiar: DB_MAXIMO + PENALIDADE_SEM_RESPOSTA, ouvido: false };
+    }
+
+    if (fim) {
+      const p = this.passos[this.indice];
+      p.limiar = fim.limiar;
+      p.ouvido = fim.ouvido;
+      this.indice++;
+      this._novaEscada();
+    }
+    return { fechouPasso: !!fim };
   }
 
-  /** Passos em que a rampa acabou sem resposta. */
+  /** Passos em que a escada estourou o teto sem resposta. */
   semResposta() { return this.passos.filter((p) => p.ouvido === false); }
 
   reiniciar() {
     for (const p of this.passos) { p.limiar = null; p.ouvido = undefined; }
     this.indice = 0;
+    this._novaEscada();
   }
 
   /** Media dos dois ouvidos por frequencia. */
@@ -208,6 +264,7 @@ function bandasSugeridas(medias) {
 }
 
 window.audiometria = { Audiometria, bandasSugeridas, FREQUENCIAS, ORELHAS,
-                       BANDAS, DB_MINIMO, DB_MAXIMO, SEGUNDOS_RAMPA };
+                       BANDAS, DB_MINIMO, DB_MAXIMO, NIVEL_INICIAL,
+                       DESCE_DB, SOBE_DB, CONFIRMACOES };
 
 })();

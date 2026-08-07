@@ -434,11 +434,21 @@ function mostrarPasso() {
 
 async function rodarPasso() {
   mostrarPasso();
-  const { db, ouvido } = await teste.tocar((fracao) => {
+  // "Nao ouvi" so vale depois dos bipes acabarem; "Ouvi" vale a qualquer hora
+  $("audio-nao-ouvi").disabled = true;
+  await teste.apresentar((fracao) => {
     $("audio-barra").style.width = `${Math.round(fracao * 100)}%`;
   });
-  if (teste.registrar(db, ouvido)) { await new Promise((r) => setTimeout(r, 650)); rodarPasso(); }
-  else mostrarResultado();
+  $("audio-nao-ouvi").disabled = false;
+}
+
+function responderPasso(ouviu) {
+  if (teste.terminou) return;
+  teste.parar();
+  $("audio-nao-ouvi").disabled = true;
+  const { fechouPasso } = teste.responder(ouviu);
+  if (fechouPasso && teste.terminou) { mostrarResultado(); return; }
+  setTimeout(rodarPasso, 450);
 }
 
 function mostrarResultado() {
@@ -582,7 +592,8 @@ $("sis-csv").addEventListener("click", () => window.perfilSistema.baixar(
   window.perfilSistema.tabela(estado.perfilSistema)));
 
 $("audio-comecar").addEventListener("click", () => { faseAudio("teste"); rodarPasso(); });
-$("audio-ouvi").addEventListener("click", () => teste.parar());
+$("audio-ouvi").addEventListener("click", () => responderPasso(true));
+$("audio-nao-ouvi").addEventListener("click", () => responderPasso(false));
 $("audio-refazer").addEventListener("click", () => { teste.reiniciar(); faseAudio("inicio"); });
 
 $("audio-aplicar").addEventListener("click", () => {

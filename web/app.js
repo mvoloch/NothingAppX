@@ -468,6 +468,64 @@ function mostrarResultado() {
 
 const arquivoSeguro = (s) => String(s || "fone").replace(/[^\w.-]+/g, "_").toLowerCase();
 
+// --------------------------------------------- correção ao vivo (motor)
+/* O motor processa a entrada escolhida (microfone ou cabo virtual) com a
+ * compressao por ouvido e devolve na saida padrao — o fone. So funciona com
+ * um perfil medido; por isso mora dentro do resultado do teste. */
+const motor = new window.motorAudio.Motor();
+let medidorTimer = null;
+
+async function listarEntradas() {
+  const sel = $("motor-entrada");
+  const atual = sel.value;
+  const aparelhos = await navigator.mediaDevices.enumerateDevices();
+  sel.innerHTML = "";
+  aparelhos.filter((d) => d.kind === "audioinput").forEach((d, i) => {
+    const o = document.createElement("option");
+    o.value = d.deviceId;
+    o.textContent = d.label || t("motor.entradaN", { n: i + 1 });
+    sel.appendChild(o);
+  });
+  if (atual) sel.value = atual;
+}
+$("motor-entrada").addEventListener("focus", listarEntradas);
+
+function desenharMedidor() {
+  const alvo = $("motor-medidor");
+  const linhas = motor.reducao();
+  if (alvo.childElementCount !== linhas.length) {
+    alvo.innerHTML = linhas.map(() => '<div class="faixa"><i></i></div>').join("");
+  }
+  linhas.forEach((b, i) => {
+    const pct = Math.min(1, Math.abs(b.db) / 18) * 100;
+    alvo.children[i].firstElementChild.style.width = pct + "%";
+  });
+}
+
+$("motor-ligar").addEventListener("click", async () => {
+  const btn = $("motor-ligar");
+  if (motor.ligado) {
+    clearInterval(medidorTimer); medidorTimer = null;
+    await motor.desligar();
+    $("motor-medidor").hidden = true;
+    btn.textContent = t("motor.ligar");
+    return;
+  }
+  if (!estado.perfilSistema) return;
+  btn.disabled = true;
+  try {
+    await motor.ligar($("motor-entrada").value || undefined, estado.perfilSistema);
+    await listarEntradas();               // com a permissão dada, vêm os nomes
+    $("motor-medidor").hidden = false;
+    medidorTimer = setInterval(desenharMedidor, 120);
+    btn.textContent = t("motor.desligar");
+  } catch (e) {
+    alert(t("motor.falha") + ": " + (e?.message || e));
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 $("sis-apo").addEventListener("click", () => window.perfilSistema.baixar(
   `perfil_${arquivoSeguro(estado.modelo?.nome)}.txt`,
   window.perfilSistema.equalizerApo(estado.perfilSistema, { nomeFone: estado.modelo?.nome })));

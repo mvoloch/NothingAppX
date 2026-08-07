@@ -313,3 +313,14 @@ body.conectado .botao-conectar { display: none; }
   font-size: 11px; line-height: 1.55; color: var(--texto-fraco);
   overflow-x: auto; white-space: pre; max-height: 190px;
 }
+
+/* ---------- correção ao vivo ---------- */
+#motor-entrada {
+  width: 100%; margin-bottom: 8px;
+  background: var(--cartao-alto); color: var(--texto); border: none;
+  border-radius: 9px; padding: 8px 10px; font-family: inherit; font-size: 12.5px;
+  cursor: pointer;
+}
+.motor-medidor { display: grid; gap: 5px; margin: 4px 0 10px; }
+.motor-medidor .faixa { height: 4px; border-radius: 2px; background: #2A2D30; overflow: hidden; }
+.motor-medidor .faixa i { display: block; height: 100%; width: 0; background: var(--acento); transition: width .12s linear; }

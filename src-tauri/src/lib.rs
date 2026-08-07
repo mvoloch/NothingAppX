@@ -42,7 +42,14 @@ mod bt {
     unsafe impl Send for Canal {}
 
     pub fn conectar() -> Result<(Canal, DataReader), String> {
-        let erro = |e: windows::core::Error| e.message().to_string();
+        // 0x80072740 (WSAEADDRINUSE): outro processo segura o canal SPP —
+        // quase sempre outra copia deste app. Reproduzido e confirmado em
+        // 07/08/2026: com a outra instancia fechada, conecta na hora, mesmo
+        // com o fone ja conectado ao Windows.
+        let erro = |e: windows::core::Error| {
+            if e.code().0 as u32 == 0x8007_2740 { "CANAL_OCUPADO".to_string() }
+            else { e.message().to_string() }
+        };
         let id = RfcommServiceId::FromUuid(GUID::from_u128(SPP_UUID)).map_err(erro)?;
         let seletor = RfcommDeviceService::GetDeviceSelector(&id).map_err(erro)?;
         let achados = DeviceInformation::FindAllAsyncAqsFilter(&seletor)
@@ -143,7 +150,16 @@ fn bt_desconectar(estado: State<Estado>) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let construtor = tauri::Builder::default().setup(|app| {
+    // Instancia unica: abrir o app de novo so traz a janela existente para
+    // frente. Duas copias vivas = a segunda nunca conecta (CANAL_OCUPADO).
+    let construtor = tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(janela) = app.get_webview_window("main") {
+                let _ = janela.unminimize();
+                let _ = janela.set_focus();
+            }
+        }))
+        .setup(|app| {
         if cfg!(debug_assertions) {
             app.handle().plugin(
                 tauri_plugin_log::Builder::default()

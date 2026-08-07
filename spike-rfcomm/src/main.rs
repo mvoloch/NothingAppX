@@ -93,10 +93,31 @@ fn main() -> Result<()> {
 
     let alvo = achados.GetAt(0)?;
     let servico = RfcommDeviceService::FromIdAsync(&alvo.Id()?)?.join()?;
-    let socket = StreamSocket::new()?;
-    socket
-        .ConnectAsync(&servico.ConnectionHostName()?, &servico.ConnectionServiceName()?)?
-        .join()?;
+    let host = servico.ConnectionHostName()?;
+    let nome_serv = servico.ConnectionServiceName()?;
+
+    // Fone JA conectado ao Windows: o ConnectAsync simples falha com
+    // 0x80072740 (WSAEADDRINUSE). Testamos os contornos em ordem.
+    let mut socket = StreamSocket::new()?;
+    if let Err(e) = socket.ConnectAsync(&host, &nome_serv)?.join() {
+        println!("plano A (simples) falhou: {:#010x}", e.code().0);
+        socket = StreamSocket::new()?;
+        let b = socket.ConnectWithProtectionLevelAsync(
+            &host, &nome_serv,
+            windows::Networking::Sockets::SocketProtectionLevel::BluetoothEncryptionAllowNullAuthentication,
+        )?.join();
+        if let Err(e) = b {
+            println!("plano B (protecao explicita) falhou: {:#010x}", e.code().0);
+            std::thread::sleep(std::time::Duration::from_millis(1200));
+            socket = StreamSocket::new()?;
+            socket.ConnectAsync(&host, &nome_serv)?.join()?;
+            println!("plano C (repetir apos 1,2 s) funcionou");
+        } else {
+            println!("plano B (protecao explicita) funcionou");
+        }
+    } else {
+        println!("plano A (simples) funcionou");
+    }
     println!("canal RFCOMM aberto com {}", alvo.Name()?);
 
     let quadro = montar_quadro(LER_BATERIA, &[], 1);

@@ -214,6 +214,11 @@ class Motor {
     this.ctx = null; this.fonte = null; this.bandas = []; this.ligado = false;
   }
 
+  /** Nome real da entrada aberta — para detectar o mic do proprio fone. */
+  rotuloEntrada() {
+    return this.fonte?.getAudioTracks()[0]?.label || "";
+  }
+
   /** Reducao instantanea de cada compressor, em dB. Para o medidor da tela. */
   reducao() {
     return this.bandas.map((b) => ({ lado: b.lado, banda: b.banda,

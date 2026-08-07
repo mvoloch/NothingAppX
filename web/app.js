@@ -487,7 +487,17 @@ async function listarEntradas() {
     sel.appendChild(o);
   });
   if (atual) sel.value = atual;
+  else {
+    // preferir o cabo virtual — capturar o microfone do proprio fone derruba
+    // o Bluetooth para o perfil maos-livres (qualidade de telefone)
+    const cabo = [...sel.options].find((o) => /cable|vb-?audio|virtual/i.test(o.textContent));
+    if (cabo) sel.value = cabo.value;
+  }
 }
+
+/** A entrada escolhida e' o microfone de um fone Bluetooth? */
+const entradaEhFone = (rotulo) =>
+  /hands-?free|headset|buds|\bear\b/i.test(rotulo || "");
 $("motor-entrada").addEventListener("focus", listarEntradas);
 
 function desenharMedidor() {
@@ -516,6 +526,13 @@ $("motor-ligar").addEventListener("click", async () => {
   try {
     await motor.ligar($("motor-entrada").value || undefined, estado.perfilSistema);
     await listarEntradas();               // com a permissão dada, vêm os nomes
+    // Capturamos o microfone do proprio fone? Isso mata o codec (maos-livres).
+    // Melhor desligar e avisar do que tocar em qualidade de telefone.
+    if (entradaEhFone(motor.rotuloEntrada())) {
+      await motor.desligar();
+      alert(t("motor.entradaErrada"));
+      return;
+    }
     $("motor-medidor").hidden = false;
     medidorTimer = setInterval(desenharMedidor, 120);
     btn.textContent = t("motor.desligar");
@@ -669,7 +686,9 @@ async function conectar() {
   } catch (e) {
     if (e && e.name === "NotFoundError") return;          // usuário fechou o seletor
     console.error(e);
-    alert("Falha ao conectar: " + (e?.message || e));
+    const msg = String(e?.message || e);
+    alert(msg.includes("CANAL_OCUPADO") ? t("aviso.canalOcupado")
+                                        : "Falha ao conectar: " + msg);
   } finally {
     btn.disabled = false;
   }

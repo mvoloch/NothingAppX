@@ -1,6 +1,6 @@
 {
   "name": "nothingappx",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Controle de fones Nothing/CMF no desktop",
   "main": "index.js",
   "scripts": {

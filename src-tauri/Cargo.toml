@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.1.0"
+version = "0.1.2"
 description = "Controle de fones Nothing/CMF no desktop"
 authors = ["projeto NothingAppX"]
 license = "GPL-3.0"
@@ -23,6 +23,7 @@ serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
 tauri = { version = "2.11.3", features = [] }
 tauri-plugin-log = "2"
+tauri-plugin-single-instance = "2"
 
 # transporte Bluetooth nativo (Windows); em Linux/mac o app abre sem ele por ora
 [target.'cfg(windows)'.dependencies.windows]

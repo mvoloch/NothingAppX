@@ -589,12 +589,21 @@ link.addEventListener("desconectado", () => {
 });
 
 async function conectar() {
-  if (!("serial" in navigator)) { alert(t("aviso.semSerial")); return; }
+  // no app empacotado a ponte nativa dispensa o Web Serial
+  if (!window.__TAURI__ && !("serial" in navigator)) { alert(t("aviso.semSerial")); return; }
 
   const btn = $("btn-conectar");
   btn.disabled = true;
   try {
     await link.conectar();
+    // A ponte nativa (Tauri) sabe o nome Bluetooth real do fone — Web Serial
+    // nao. Quando ele vem, o modelo se escolhe sozinho.
+    const auto = link.nomeAparelho && disp.porNomeBluetooth(link.nomeAparelho);
+    if (auto) {
+      estado.modelo = auto;
+      localStorage.setItem("modelo", auto.id);
+      $("seletor-modelo").value = auto.id;
+    }
     estado.conectado = true;
     estado.nome = estado.modelo?.nome || "—";
     render();

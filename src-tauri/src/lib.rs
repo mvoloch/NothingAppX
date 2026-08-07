@@ -51,9 +51,15 @@ mod bt {
             return Err("nenhum fone pareado com o servico Nothing".into());
         }
         let alvo = achados.GetAt(0).map_err(erro)?;
-        let nome = alvo.Name().map_err(erro)?.to_string();
         let servico = RfcommDeviceService::FromIdAsync(&alvo.Id().map_err(erro)?)
             .map_err(erro)?.join().map_err(erro)?;
+        // o nome que interessa e' o do FONE ("CMF Buds 2 Plus"), nao o do
+        // servico ("NTAPP") — e' por ele que a interface reconhece o modelo
+        let nome = servico
+            .Device()
+            .and_then(|d| d.Name())
+            .map(|n| n.to_string())
+            .unwrap_or_else(|_| alvo.Name().map(|n| n.to_string()).unwrap_or_default());
         let socket = StreamSocket::new().map_err(erro)?;
         socket
             .ConnectAsync(

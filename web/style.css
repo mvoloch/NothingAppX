@@ -1,5 +1,16 @@
 /* NothingAppX — tema escuro.
-   Linguagem visual recriada do zero: nenhum asset, ícone ou fonte de terceiros. */
+   Linguagem visual recriada do zero: nenhum asset, ícone ou fonte da Nothing.
+   A NDot/NType 82 e' proprietaria (uso restrito a materiais da marca), entao o
+   display usa a Doto — matriz de pontos do mesmo espirito, SIL OFL, licenca em
+   fontes/OFL.txt. Se um dia houver permissao por escrito da Nothing, trocar a
+   fonte e' so' este @font-face. */
+
+@font-face {
+  font-family: "Doto";
+  src: url("fontes/Doto.ttf") format("truetype");
+  font-weight: 100 900;
+  font-display: swap;
+}
 
 :root {
   --fundo:        #000000;
@@ -12,7 +23,7 @@
   --verde:        #34C759;
   --raio:         22px;
   --raio-pequeno: 14px;
-  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+  --serif: "Doto", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
   --sans:  ui-sans-serif, "Segoe UI Variable", "Segoe UI", Inter, system-ui, sans-serif;
 }
 
@@ -39,7 +50,7 @@ html, body {
 }
 .titulo {
   font-family: var(--serif);
-  font-weight: 400;
+  font-weight: 600;
   font-size: 26px;
   letter-spacing: .2px;
   margin: 0;
@@ -82,7 +93,7 @@ html, body {
 
 .nome-dispositivo {
   font-family: var(--serif);
-  font-weight: 400; font-size: 19px; margin: 2px 0 14px;
+  font-weight: 600; font-size: 19px; margin: 2px 0 14px;
 }
 
 .baterias { display: flex; justify-content: center; gap: 26px; margin-bottom: 16px; }
@@ -251,7 +262,7 @@ body.conectado .botao-conectar { display: none; }
   background: var(--cartao); border-radius: var(--raio); padding: 16px 16px 20px;
 }
 .painel-topo { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
-.painel-topo h2 { font-family: var(--serif); font-weight: 400; font-size: 21px; margin: 0; }
+.painel-topo h2 { font-family: var(--serif); font-weight: 600; font-size: 21px; margin: 0; }
 .painel-voltar {
   background: var(--cartao-alto); border: none; color: var(--texto);
   width: 34px; height: 34px; border-radius: 50%; cursor: pointer; font-size: 16px;

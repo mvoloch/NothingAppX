@@ -432,18 +432,24 @@ function mostrarPasso() {
   $("audio-barra").style.width = "0%";
 }
 
+/* Uma resposta por apresentacao. Sem esta trava, dois cliques rapidos
+ * disparavam duas rodadas em paralelo e os bipes voltavam sobrepostos. */
+let aguardandoResposta = false;
+
 async function rodarPasso() {
   mostrarPasso();
   // "Nao ouvi" so vale depois dos bipes acabarem; "Ouvi" vale a qualquer hora
   $("audio-nao-ouvi").disabled = true;
+  aguardandoResposta = true;
   await teste.apresentar((fracao) => {
     $("audio-barra").style.width = `${Math.round(fracao * 100)}%`;
   });
-  $("audio-nao-ouvi").disabled = false;
+  if (aguardandoResposta) $("audio-nao-ouvi").disabled = false;
 }
 
 function responderPasso(ouviu) {
-  if (teste.terminou) return;
+  if (!aguardandoResposta || teste.terminou) return;
+  aguardandoResposta = false;
   teste.parar();
   $("audio-nao-ouvi").disabled = true;
   const { fechouPasso } = teste.responder(ouviu);

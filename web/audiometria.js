@@ -71,8 +71,9 @@ const SOBE_DB = 5;
 const CONFIRMACOES = 2;     // "sim" na subida, duas vezes no mesmo nivel
 const MAX_APRESENTACOES = 18;  // trava de seguranca por passo
 const PULSOS = 3;
-const PULSO_S = 0.22;
-const INTERVALO_S = 0.24;
+const PULSO_S = 0.5;       // ajuste de campo: 0.22 era rapido demais para julgar
+const INTERVALO_S = 0.35;
+const RESPIRO_S = 0.35;    // silencio antes do primeiro bipe de cada apresentacao
 const PENALIDADE_SEM_RESPOSTA = 6;
 
 class Audiometria {
@@ -116,7 +117,7 @@ class Audiometria {
     osc.frequency.value = p.hz;
     pan.pan.value = p.orelha === "esquerda" ? -1 : 1;
 
-    const t0 = ctx.currentTime + 0.05;
+    const t0 = ctx.currentTime + RESPIRO_S;
     const g = Math.pow(10, this.nivel / 20);
     const dur = PULSOS * PULSO_S + (PULSOS - 1) * INTERVALO_S;
     vol.gain.setValueAtTime(0, ctx.currentTime);

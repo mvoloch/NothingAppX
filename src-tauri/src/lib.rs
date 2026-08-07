@@ -154,6 +154,31 @@ fn apo_aplicar(perfil: String) -> Result<(), String> {
     Ok(())
 }
 
+/* Baixa e abre o instalador oficial do Equalizer APO (GPL; ~12 MB, do
+ * SourceForge do projeto). O usuario so precisa marcar o fone na lista e
+ * aceitar a reinicializacao — o app cuida do resto. curl.exe existe em todo
+ * Windows 10/11. */
+#[cfg(windows)]
+#[tauri::command]
+fn apo_instalar() -> Result<(), String> {
+    const URL: &str =
+        "https://sourceforge.net/projects/equalizerapo/files/1.4.2/EqualizerAPO-x64-1.4.2.exe/download";
+    let destino = std::env::temp_dir().join("EqualizerAPO-x64-1.4.2.exe");
+    let ok = std::process::Command::new("curl.exe")
+        .args(["-L", "-s", "-o"])
+        .arg(&destino)
+        .arg(URL)
+        .status()
+        .map_err(|e| e.to_string())?
+        .success();
+    let tamanho = std::fs::metadata(&destino).map(|m| m.len()).unwrap_or(0);
+    if !ok || tamanho < 5_000_000 {
+        return Err("DOWNLOAD_FALHOU".into());
+    }
+    std::process::Command::new(&destino).spawn().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 #[cfg(windows)]
 #[tauri::command]
 fn apo_remover() -> Result<(), String> {
@@ -238,7 +263,8 @@ pub fn run() {
     let construtor = construtor
         .manage(Estado(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![bt_conectar, bt_enviar, bt_desconectar,
-                                                 apo_detectar, apo_aplicar, apo_remover]);
+                                                 apo_detectar, apo_aplicar, apo_instalar,
+                                                 apo_remover]);
 
     construtor
         .run(tauri::generate_context!())

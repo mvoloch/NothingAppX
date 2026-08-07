@@ -595,22 +595,30 @@ $("motor-ligar").addEventListener("click", async () => {
 // --------------------------------------- aplicar direto no Equalizer APO
 /* So no app empacotado: a ponte nativa escreve o perfil na pasta de config
  * do EqAPO e ele rele na hora — sem baixar arquivo, sem copiar nada. */
-async function prepararBotoesApo() {
-  if (!window.__TAURI__?.core) return;
-  const tem = await window.__TAURI__.core.invoke("apo_detectar").catch(() => null);
+if (window.__TAURI__?.core) {
   $("sis-aplicar").hidden = false;
   $("sis-remover").hidden = false;
-  $("sis-aplicar").dataset.apo = tem || "";
 }
-prepararBotoesApo();
 
 $("sis-aplicar").addEventListener("click", async () => {
   if (!estado.perfilSistema) return;
-  if (!$("sis-aplicar").dataset.apo) { alert(t("sis.apoAusente")); return; }
+  const core = window.__TAURI__.core;
+  // deteccao ao vivo: o usuario pode ter acabado de instalar o EqAPO
+  const tem = await core.invoke("apo_detectar").catch(() => null);
+  if (!tem) {
+    if (!confirm(t("sis.apoInstalarPergunta"))) return;
+    try {
+      await core.invoke("apo_instalar");
+      alert(t("sis.apoInstalando"));
+    } catch {
+      alert(t("sis.apoAusente"));
+    }
+    return;
+  }
   const texto = window.perfilSistema.equalizerApo(estado.perfilSistema,
                                                   { nomeFone: estado.modelo?.nome });
   try {
-    await window.__TAURI__.core.invoke("apo_aplicar", { perfil: texto });
+    await core.invoke("apo_aplicar", { perfil: texto });
     alert(t("sis.aplicado"));
   } catch (e) {
     const m = String(e);

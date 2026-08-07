@@ -55,7 +55,14 @@ com um aviso, porque as tabelas de bytes foram assumidas iguais às da família 
 - Cancelamento de ruído: modos, e os quatro níveis onde o aparelho tem
 - Ultra bass: liga/desliga e nível 1–5
 - Equalizador: os seis presets
-- Teste de audição próprio, com correção pelo equalizador
+- **Teste de audição no método clínico** (escada de Hughson-Westlake: bipes
+  pulsados em nível fixo, "não ouvi" automático por janela de resposta),
+  com correção pelo equalizador do fone
+- **Correção por ouvido no áudio do sistema** — o app escreve o perfil direto
+  na configuração do Equalizer APO e ele passa a valer na hora, mesmo com o
+  app fechado. Validado em hardware real: melhora notável, relatada nos dois
+  ouvidos
+- Correção ao vivo (beta) por compressão multibanda, via cabo de áudio virtual
 - Áudio espacial (sem leitura de estado: o fone não responde a uma)
 - Modo baixa latência
 - Controles: leitura do mapa de gestos
@@ -71,10 +78,24 @@ com um aviso, porque as tabelas de bytes foram assumidas iguais às da família 
 - **Perfil sonoro pessoal (Audiodo)** — o interruptor existe, mas a correção
   não roda no fone: ela roda no telefone, sobre o áudio, antes de ser enviado.
   Comprovado por A/B — o mesmo fone, com o perfil ligado, soa cru quando a
-  fonte é o PC. Nenhum app de PC replica isso por comando Bluetooth: para ter
-  o mesmo efeito é preciso processar o áudio no pipeline do sistema. Em troca há um **teste de
-  audição próprio**, que mede seus limiares e corrige pelo equalizador de 3
-  bandas — mais modesto, e honesto sobre isso.
+  fonte é o PC. Nenhum app de PC replica isso por comando Bluetooth. **A nossa
+  resposta está na seção seguinte** — e funciona.
+
+## Som personalizado de verdade (a resposta ao Audiodo)
+
+O app tem um **teste de audição próprio** no método clínico (escada de
+Hughson-Westlake: bipes pulsados em nível fixo, «Ouvi» ou silêncio, desce
+10–15 dB, sobe 5). Do resultado saem duas correções, em camadas:
+
+1. **No fone** — pelo equalizador de 3 bandas do próprio aparelho. Grossa,
+   mas viaja com o fone.
+2. **No sistema (Windows)** — um filtro por frequência medida, esquerdo e
+   direito independentes, aplicado dentro do pipeline de áudio pelo
+   [Equalizer APO](https://sourceforge.net/projects/equalizerapo/) (GPL). O
+   app baixa e instala o Equalizer APO sozinho se preciso, escreve o perfil
+   direto na configuração dele e o efeito é instantâneo — **sem cabo virtual,
+   sem tocar no codec Bluetooth, e continua ativo com o app fechado**. Testado
+   em campo num CMF Buds 2 Plus: a diferença é notável nos dois ouvidos.
 - **Atualização de firmware** — fora de escopo, e é onde se transforma um fone
   em peso de papel
 
@@ -127,6 +148,12 @@ localizar fone, desligamento automático — também valem muito.
 O formato do quadro e vários números de comando vêm do
 [ear-web](https://github.com/radiance-project/ear-web), sob GPL-3.0. Este projeto
 credita, herda a licença e devolve o que descobriu.
+
+A correção de sistema no Windows roda sobre o
+[Equalizer APO](https://sourceforge.net/projects/equalizerapo/) (GPL-2.0), de
+Jonas Thedering — o app automatiza a instalação do instalador oficial e gera
+arquivos de configuração para ele; o código-fonte dele está no projeto acima.
+A fonte de display é a [Doto](https://fonts.google.com/specimen/Doto) (SIL OFL).
 
 ## Licença
 

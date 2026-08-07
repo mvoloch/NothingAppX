@@ -104,6 +104,70 @@ mod bt {
 #[cfg(windows)]
 struct Estado(Mutex<Option<bt::Canal>>);
 
+/* ---------------------------------------------------------- Equalizer APO
+ * Fase 2a do DSP: o perfil por ouvido escrito DIRETO na pasta de config do
+ * Equalizer APO, que roda dentro do pipeline de audio do Windows. Sem cabo
+ * virtual, sem risco de derrubar o codec, e a correcao sobrevive ao app
+ * fechado — exatamente o que o Android faz com o efeito da Audiodo.
+ * O EqAPO rele a config ao salvar; o efeito e' imediato. */
+
+#[cfg(windows)]
+const APO_ARQUIVO: &str = "NothingAppX.txt";
+#[cfg(windows)]
+const APO_INCLUDE: &str = "Include: NothingAppX.txt";
+
+#[cfg(windows)]
+fn apo_pasta() -> Option<std::path::PathBuf> {
+    // instalacao padrao; cobre x64 e x86
+    for var in ["ProgramFiles", "ProgramFiles(x86)"] {
+        if let Ok(base) = std::env::var(var) {
+            let dir = std::path::Path::new(&base).join("EqualizerAPO").join("config");
+            if dir.join("config.txt").exists() {
+                return Some(dir);
+            }
+        }
+    }
+    None
+}
+
+#[cfg(windows)]
+#[tauri::command]
+fn apo_detectar() -> Option<String> {
+    apo_pasta().map(|d| d.to_string_lossy().into_owned())
+}
+
+#[cfg(windows)]
+#[tauri::command]
+fn apo_aplicar(perfil: String) -> Result<(), String> {
+    let erro = |e: std::io::Error| {
+        if e.kind() == std::io::ErrorKind::PermissionDenied { "SEM_PERMISSAO".into() }
+        else { e.to_string() }
+    };
+    let dir = apo_pasta().ok_or("APO_AUSENTE")?;
+    std::fs::write(dir.join(APO_ARQUIVO), perfil).map_err(erro)?;
+    let cfg = dir.join("config.txt");
+    let texto = std::fs::read_to_string(&cfg).map_err(erro)?;
+    if !texto.lines().any(|l| l.trim() == APO_INCLUDE) {
+        std::fs::write(&cfg, format!("{}\r\n{}\r\n", texto.trim_end(), APO_INCLUDE))
+            .map_err(erro)?;
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+#[tauri::command]
+fn apo_remover() -> Result<(), String> {
+    let Some(dir) = apo_pasta() else { return Ok(()) };
+    let cfg = dir.join("config.txt");
+    if let Ok(texto) = std::fs::read_to_string(&cfg) {
+        let novo: Vec<&str> = texto.lines().filter(|l| l.trim() != APO_INCLUDE).collect();
+        std::fs::write(&cfg, format!("{}\r\n", novo.join("\r\n").trim_end()))
+            .map_err(|e| e.to_string())?;
+    }
+    let _ = std::fs::remove_file(dir.join(APO_ARQUIVO));
+    Ok(())
+}
+
 #[cfg(windows)]
 #[tauri::command]
 fn bt_conectar(app: AppHandle, estado: State<Estado>) -> Result<String, String> {
@@ -173,7 +237,8 @@ pub fn run() {
     #[cfg(windows)]
     let construtor = construtor
         .manage(Estado(Mutex::new(None)))
-        .invoke_handler(tauri::generate_handler![bt_conectar, bt_enviar, bt_desconectar]);
+        .invoke_handler(tauri::generate_handler![bt_conectar, bt_enviar, bt_desconectar,
+                                                 apo_detectar, apo_aplicar, apo_remover]);
 
     construtor
         .run(tauri::generate_context!())

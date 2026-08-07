@@ -53,6 +53,17 @@ const DB_MINIMO = -75;      // onde cada tom comeca: inaudivel em qualquer volum
 const DB_MAXIMO = -12;      // teto de seguranca — nao chega perto de doer
 const SEGUNDOS_RAMPA = 7;   // subida lenta o bastante para o dedo acompanhar
 
+/* O TEMPO ate o toque E' a medida: a rampa sobe 9 dB/s, entao tocar mais tarde
+ * = limiar mais alto = mais reforco naquela frequencia. O atraso de reacao do
+ * dedo (~0,3 s ~ 3 dB) e' quase constante entre frequencias e some na
+ * normalizacao pela media — o que sobra e' justamente a DIFERENCA entre elas.
+ *
+ * Passo que termina SEM toque e' outra historia: nao e' "ouvi no teto", e'
+ * "nao ouvi ate onde o teste alcanca". A audiometria clinica anota isso como
+ * "sem resposta" e trata o limiar como censurado (o real esta' acima do teto).
+ * Usamos a convencao dela: teto + penalidade, e o passo fica marcado. */
+const PENALIDADE_SEM_RESPOSTA = 6;
+
 class Audiometria {
   constructor() {
     this.ctx = null;
@@ -96,7 +107,7 @@ class Audiometria {
     osc.start();
 
     return new Promise((resolve) => {
-      const encerrar = (db) => {
+      const encerrar = (db, ouvido) => {
         if (!this.tocando) return;
         this.tocando = null;
         clearInterval(relogio);
@@ -105,7 +116,7 @@ class Audiometria {
         vol.gain.setValueAtTime(vol.gain.value, ctx.currentTime);
         vol.gain.exponentialRampToValueAtTime(g(DB_MINIMO), ctx.currentTime + 0.05);
         osc.stop(ctx.currentTime + 0.08);
-        resolve(db);
+        resolve({ db, ouvido });
       };
 
       const agora = () => {
@@ -113,12 +124,12 @@ class Audiometria {
         return DB_MINIMO + ((DB_MAXIMO - DB_MINIMO) * t) / SEGUNDOS_RAMPA;
       };
 
-      this.tocando = () => encerrar(agora());
+      this.tocando = () => encerrar(agora(), true);
       const relogio = setInterval(() => {
         if (!this.tocando) return;
         const db = agora();
         aoProgredir?.((db - DB_MINIMO) / (DB_MAXIMO - DB_MINIMO));
-        if (ctx.currentTime - t0 >= SEGUNDOS_RAMPA) encerrar(DB_MAXIMO);
+        if (ctx.currentTime - t0 >= SEGUNDOS_RAMPA) encerrar(DB_MAXIMO, false);
       }, 60);
     });
   }
@@ -127,14 +138,19 @@ class Audiometria {
   parar() { this.tocando?.(); }
 
   /** Registra o limiar e avanca. Devolve true se ainda ha' passos. */
-  registrar(db) {
-    this.passos[this.indice].limiar = db;
+  registrar(db, ouvido = true) {
+    const p = this.passos[this.indice];
+    p.ouvido = ouvido;
+    p.limiar = ouvido ? db : DB_MAXIMO + PENALIDADE_SEM_RESPOSTA;
     this.indice++;
     return !this.terminou;
   }
 
+  /** Passos em que a rampa acabou sem resposta. */
+  semResposta() { return this.passos.filter((p) => p.ouvido === false); }
+
   reiniciar() {
-    for (const p of this.passos) p.limiar = null;
+    for (const p of this.passos) { p.limiar = null; p.ouvido = undefined; }
     this.indice = 0;
   }
 

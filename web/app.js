@@ -434,10 +434,10 @@ function mostrarPasso() {
 
 async function rodarPasso() {
   mostrarPasso();
-  const db = await teste.tocar((fracao) => {
+  const { db, ouvido } = await teste.tocar((fracao) => {
     $("audio-barra").style.width = `${Math.round(fracao * 100)}%`;
   });
-  if (teste.registrar(db)) { await new Promise((r) => setTimeout(r, 650)); rodarPasso(); }
+  if (teste.registrar(db, ouvido)) { await new Promise((r) => setTimeout(r, 650)); rodarPasso(); }
   else mostrarResultado();
 }
 
@@ -457,13 +457,23 @@ function mostrarResultado() {
   $("sis-previa").textContent = apo;
 
   const dif = teste.assimetria();
-  const lado = dif > 0 ? "direito" : "esquerdo";
   $("audio-resumo").textContent =
     t("audio.resultado", { g: bandas[0], m: bandas[1], a: bandas[2] }) + " " +
     (Math.abs(dif) >= 4
       ? t("audio.assimetria", { lado: t("audio.orelha." + (dif > 0 ? "direita" : "esquerda")),
                                 db: Math.abs(Math.round(dif)) })
       : t("audio.simetrico"));
+
+  // Passos sem resposta: o limiar real esta' ACIMA do alcance do teste. Um ou
+  // dois sao informacao (perda naquela frequencia); muitos indicam volume
+  // baixo demais para o teste valer.
+  const nr = teste.semResposta();
+  if (nr.length) {
+    const lista = nr.map((p) => `${p.hz} Hz (${t("audio.orelha." + p.orelha)})`).join(", ");
+    $("audio-resumo").textContent += " " +
+      t(nr.length >= 4 ? "audio.semRespostaMuitos" : "audio.semResposta",
+        { n: nr.length, lista });
+  }
 }
 
 const arquivoSeguro = (s) => String(s || "fone").replace(/[^\w.-]+/g, "_").toLowerCase();

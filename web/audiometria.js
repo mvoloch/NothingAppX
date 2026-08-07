@@ -70,8 +70,8 @@ const DB_MAXIMO = -12;      // teto de seguranca — nao chega perto de doer
  * teste de consumo. Aqui a PRIMEIRA resposta na subida fecha o limiar — e a
  * resposta "nao ouvi" e' automatica: se a janela passar sem clique, seguimos.
  * E' o desenho dos audiometros automatizados de triagem. */
-const NIVEL_INICIAL = -40;  // primeiro bipe claramente audivel para audicao tipica
-const DESCE_DB = 10;
+const NIVEL_INICIAL = -45;  // primeiro bipe audivel para audicao tipica
+const DESCE_DB = 15;        // desce rapido; a PRECISAO vem da subida de 5 em 5
 const SOBE_DB = 5;
 const CONFIRMACOES = 1;     // primeira resposta na subida ja' e' o limiar
 const MAX_APRESENTACOES = 12;  // trava de seguranca por passo

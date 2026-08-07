@@ -324,3 +324,14 @@ body.conectado .botao-conectar { display: none; }
 .motor-medidor { display: grid; gap: 5px; margin: 4px 0 10px; }
 .motor-medidor .faixa { height: 4px; border-radius: 2px; background: #2A2D30; overflow: hidden; }
 .motor-medidor .faixa i { display: block; height: 100%; width: 0; background: var(--acento); transition: width .12s linear; }
+
+/* ---------- clique com resposta visual ---------- */
+.botao-acao:active, .botao-conectar:active {
+  transform: scale(.96);
+  opacity: .65;
+}
+.botao-acao.apertado {
+  background: var(--verde);
+  color: #000;
+  transition: none;
+}

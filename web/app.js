@@ -633,7 +633,13 @@ $("sis-csv").addEventListener("click", () => window.perfilSistema.baixar(
   window.perfilSistema.tabela(estado.perfilSistema)));
 
 $("audio-comecar").addEventListener("click", () => { faseAudio("teste"); rodarPasso(); });
-$("audio-ouvi").addEventListener("click", () => responderPasso(true));
+$("audio-ouvi").addEventListener("click", () => {
+  // pisca verde: o clique foi registrado, sem duvida
+  const b = $("audio-ouvi");
+  b.classList.add("apertado");
+  setTimeout(() => b.classList.remove("apertado"), 220);
+  responderPasso(true);
+});
 $("audio-refazer").addEventListener("click", () => { teste.reiniciar(); faseAudio("inicio"); });
 
 $("audio-aplicar").addEventListener("click", () => {

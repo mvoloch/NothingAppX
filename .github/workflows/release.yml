@@ -7,6 +7,10 @@ on:
   push:
     tags: ["v*"]
 
+# o token padrao e' so-leitura; criar a release e subir instaladores exige isto
+permissions:
+  contents: write
+
 jobs:
   build:
     strategy:

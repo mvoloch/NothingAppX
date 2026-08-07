@@ -1,0 +1,20 @@
+[package]
+name = "spike-rfcomm"
+version = "0.1.0"
+edition = "2021"
+
+# Spike de viabilidade: prova (ou refuta) que da' para falar com o fone por
+# RFCOMM nativo do Windows, sem porta COM virtual e sem Web Serial. O codigo
+# que sobreviver daqui vira a camada de transporte do backend Tauri.
+
+[dependencies.windows]
+version = "0.62"
+features = [
+    "Devices_Bluetooth",
+    "Devices_Bluetooth_Rfcomm",
+    "Devices_Enumeration",
+    "Foundation",
+    "Foundation_Collections",
+    "Networking_Sockets",
+    "Storage_Streams",
+]

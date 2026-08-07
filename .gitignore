@@ -1,0 +1,15 @@
+# dependencias e artefatos de build
+node_modules/
+target/
+src-tauri/gen/
+
+# NUNCA publicar: capturas HCI contem nomes de aparelhos pareados de
+# terceiros em texto puro (resposta do comando 0xC028), e o APK e' binario
+# com copyright da Nothing. Fatos extraidos deles ja estao documentados no
+# codigo; os originais ficam so na maquina de quem capturou.
+ferramentas/capturas/
+ferramentas/capturas2/
+apk original/
+*.log
+*.apk
+*.xapk

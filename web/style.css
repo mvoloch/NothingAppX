@@ -1,0 +1,304 @@
+/* NothingAppX — tema escuro.
+   Linguagem visual recriada do zero: nenhum asset, ícone ou fonte de terceiros. */
+
+:root {
+  --fundo:        #000000;
+  --cartao:       #1B1D1F;
+  --cartao-alto:  #26292C;
+  --texto:        #FFFFFF;
+  --texto-fraco:  #9A9EA3;
+  --texto-tenue:  #5E6367;
+  --acento:       #E0353F;   /* vermelho de seleção */
+  --verde:        #34C759;
+  --raio:         22px;
+  --raio-pequeno: 14px;
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+  --sans:  ui-sans-serif, "Segoe UI Variable", "Segoe UI", Inter, system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  background: var(--fundo);
+  color: var(--texto);
+  font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+.tela {
+  max-width: 430px;
+  margin: 0 auto;
+  padding: 18px 18px 40px;
+}
+
+/* ---------- barra superior ---------- */
+.barra {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 14px;
+}
+.titulo {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: 26px;
+  letter-spacing: .2px;
+  margin: 0;
+}
+.icone-redondo {
+  width: 34px; height: 34px; border-radius: 50%;
+  background: transparent; border: none; cursor: pointer;
+  color: var(--texto); display: grid; place-items: center;
+}
+.icone-redondo svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+
+/* ---------- chips ---------- */
+.chips { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.chip-dispositivo {
+  position: relative; width: 42px; height: 42px; border-radius: 50%;
+  background: var(--cartao-alto); border: none; cursor: pointer;
+  display: grid; place-items: center; color: #A9B4CC;
+}
+.chip-dispositivo .mini-buds { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.7; }
+.ponto-online {
+  position: absolute; top: 1px; right: 1px;
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--texto-tenue); border: 2px solid var(--fundo);
+  transition: background .25s;
+}
+.ponto-online.on { background: var(--verde); }
+.chip-add {
+  width: 34px; height: 34px; border-radius: 50%;
+  background: transparent; border: none; color: var(--texto);
+  font-size: 24px; line-height: 1; cursor: pointer;
+}
+
+/* ---------- dispositivo ---------- */
+.hero { text-align: center; padding: 6px 0 4px; }
+.ilustracao { height: 172px; display: grid; place-items: center; }
+.buds-svg { width: 230px; height: 172px; }
+.buds-svg .bud { transition: transform .5s cubic-bezier(.22,1,.36,1); }
+.hero.conectado .bud.esquerdo  { transform: translateX(-4px) rotate(-4deg); }
+.hero.conectado .bud.direito   { transform: translateX(4px)  rotate(4deg); }
+
+.nome-dispositivo {
+  font-family: var(--serif);
+  font-weight: 400; font-size: 19px; margin: 2px 0 14px;
+}
+
+.baterias { display: flex; justify-content: center; gap: 26px; margin-bottom: 16px; }
+.bateria { display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 62px; }
+.bateria .trilho {
+  width: 54px; height: 2px; border-radius: 2px;
+  background: #34383C; overflow: hidden;
+}
+.bateria .nivel { height: 100%; background: var(--texto); transition: width .5s ease; }
+.bateria span { font-size: 12.5px; color: var(--texto-fraco); letter-spacing: .2px; }
+
+/* Botao grande de acao. `.botao-conectar` e' o mesmo visual, mas some sozinho
+   quando o fone conecta — por isso os botoes dos paineis usam `.botao-acao`.
+   Ja' custou o teste de audicao inteiro invisivel: os tres botoes dele herdaram
+   a regra `body.conectado` e sumiam justamente com o fone ligado. */
+.botao-acao, .botao-conectar {
+  width: 100%; padding: 14px; margin: 4px 0 18px;
+  border: none; border-radius: 999px; cursor: pointer;
+  background: var(--texto); color: #000;
+  font-size: 15px; font-weight: 600; letter-spacing: .2px;
+  transition: opacity .2s;
+}
+.botao-acao:hover, .botao-conectar:hover { opacity: .85; }
+.botao-acao[hidden], .botao-conectar[hidden] { display: none; }
+
+/* ---------- cartões ---------- */
+.cartao {
+  background: var(--cartao);
+  border-radius: var(--raio);
+  padding: 16px 16px 18px;
+  margin-bottom: 12px;
+}
+.cartao-cabecalho { display: flex; align-items: flex-start; justify-content: space-between; }
+.cartao h3 { font-size: 15px; font-weight: 600; margin: 0 0 2px; letter-spacing: .1px; }
+.cartao .sub { font-size: 13px; color: var(--texto-fraco); margin: 0 0 14px; }
+.reticencias { background: none; border: none; color: var(--texto-fraco); cursor: pointer; font-size: 14px; letter-spacing: 1px; }
+
+/* modos circulares */
+.modos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 6px; }
+.modos.dois { grid-template-columns: repeat(2, 1fr); max-width: 220px; }
+.modo {
+  background: none; border: none; cursor: pointer; padding: 4px 0;
+  display: flex; flex-direction: column; align-items: center; gap: 9px;
+  color: var(--texto);
+}
+.modo .disco {
+  width: 64px; height: 64px; border-radius: 50%;
+  background: var(--cartao-alto);
+  display: grid; place-items: center;
+  transition: background .22s, color .22s, transform .18s;
+}
+.modo .disco svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; }
+.modo:hover .disco { transform: translateY(-1px); }
+.modo.ativo .disco { background: var(--texto); color: #000; }
+.modo .rotulo { font-size: 11.5px; color: var(--texto-fraco); line-height: 1.2; max-width: 84px; }
+.modo.ativo .rotulo { color: var(--texto); }
+
+/* níveis */
+.niveis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-top: 18px; }
+.nivel-opcao {
+  background: none; border: none; cursor: pointer; padding: 0;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  font-size: 11.5px; color: var(--texto-fraco);
+}
+.nivel-opcao .marca {
+  width: 100%; height: 3px; border-radius: 3px; background: #3A3E42;
+  transition: background .2s, transform .2s;
+}
+.nivel-opcao.ativo { color: var(--texto); }
+.nivel-opcao.ativo .marca { background: var(--texto); transform: scaleY(1.35); }
+
+/* ---------- grade 2x2 ---------- */
+.grade { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.cartao.compacto { margin-bottom: 0; min-height: 132px; display: flex; flex-direction: column; }
+.cartao.compacto .sub { margin-bottom: auto; }
+.rodape-cartao { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
+
+.interruptor {
+  width: 44px; height: 26px; border-radius: 999px; border: none; cursor: pointer;
+  background: #3A3E42; position: relative; transition: background .22s;
+}
+.interruptor span {
+  position: absolute; top: 3px; left: 3px; width: 20px; height: 20px;
+  border-radius: 50%; background: #0B0D0E; transition: transform .22s;
+}
+.interruptor[aria-checked="true"] { background: var(--texto); }
+.interruptor[aria-checked="true"] span { transform: translateX(18px); }
+
+/* Escada do Ultra bass. Cada degrau e um botao: no app oficial o nivel 1..5
+   e escolhido aqui mesmo, nao so exibido. O <button> e transparente e existe
+   apenas para dar area de clique — o tracinho continua sendo o <i>. */
+.barrinhas { display: flex; align-items: flex-end; height: 22px; }
+.barrinhas button {
+  background: none; border: none; padding: 0 2px; height: 22px;
+  display: flex; align-items: flex-end; cursor: pointer;
+}
+.barrinhas i {
+  display: block; width: 3px; border-radius: 2px; background: #3A3E42; height: 8px;
+  transition: background .2s, height .2s;
+}
+.barrinhas button:nth-child(2) i{height:11px}.barrinhas button:nth-child(3) i{height:14px}
+.barrinhas button:nth-child(4) i{height:17px}.barrinhas button:nth-child(5) i{height:20px}
+.barrinhas i.on { background: var(--acento); }
+.barrinhas.inerte { opacity: .3; pointer-events: none; }
+.barrinhas button:hover i { background: var(--texto-fraco); }
+.barrinhas button:hover i.on { background: var(--acento); }
+
+.onda { width: 62px; height: 24px; color: var(--texto-fraco); margin-top: 10px; }
+.miniatura-eq { margin-top: 8px; display: grid; place-items: center; }
+#eq-mini { width: 84px; height: 84px; }
+
+/* ---------- avisos ---------- */
+.indisponivel {
+  margin: 14px 0 0; font-size: 11.5px; color: var(--texto-tenue);
+  border-top: 1px solid #2A2D30; padding-top: 10px;
+}
+
+.rodape {
+  margin-top: 20px; text-align: center;
+  font-size: 11.5px; color: var(--texto-tenue);
+}
+.rodape .separador { margin: 0 6px; }
+
+/* ---------- seletor de idioma ---------- */
+.barra-acoes { display: flex; align-items: center; gap: 6px; }
+.seletor-idioma {
+  background: var(--cartao); color: var(--texto-fraco);
+  border: 1px solid #2E3235; border-radius: 999px;
+  padding: 5px 10px; font-size: 12px; font-family: inherit;
+  cursor: pointer; outline: none;
+}
+.seletor-idioma:focus-visible { border-color: var(--texto-fraco); }
+
+/* ---------- estados ---------- */
+.niveis.inerte { opacity: .32; pointer-events: none; }
+.cartao.indisponivel-cartao { opacity: .5; }
+.cartao.indisponivel-cartao::after {
+  content: ""; display: block; height: 0;
+}
+
+body:not(.conectado) .cartao { opacity: .42; pointer-events: none; }
+body.conectado .botao-conectar { display: none; }
+
+/* respeita quem prefere menos animação */
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}
+
+/* Aviso de modelo nao confirmado. Aparece para todo fone que ninguem ainda
+   testou contra este app — e' honestidade, nao enfeite. */
+.aviso-modelo {
+  margin: 0 0 16px; padding: 9px 13px; border-radius: 10px;
+  background: rgba(224, 53, 63, .1); border: 1px solid rgba(224, 53, 63, .32);
+  color: #F2A0A5; font-size: 12px; line-height: 1.45;
+}
+
+/* ---------- paineis de detalhe ---------- */
+.painel {
+  position: fixed; inset: 0; z-index: 40;
+  background: rgba(0,0,0,.72); backdrop-filter: blur(7px);
+  display: grid; place-items: start center; overflow-y: auto; padding: 18px;
+}
+.painel[hidden] { display: none; }
+.painel-caixa {
+  width: 100%; max-width: 430px;
+  background: var(--cartao); border-radius: var(--raio); padding: 16px 16px 20px;
+}
+.painel-topo { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.painel-topo h2 { font-family: var(--serif); font-weight: 400; font-size: 21px; margin: 0; }
+.painel-voltar {
+  background: var(--cartao-alto); border: none; color: var(--texto);
+  width: 34px; height: 34px; border-radius: 50%; cursor: pointer; font-size: 16px;
+}
+.painel-nota { font-size: 12px; color: var(--texto-tenue); margin: 0 0 14px; line-height: 1.5; }
+
+.eq-curva { width: 100%; height: 170px; display: block; margin-bottom: 10px; }
+.lista-presets { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.preset {
+  padding: 12px 10px; border: none; border-radius: 999px; cursor: pointer;
+  background: var(--cartao-alto); color: var(--texto);
+  font-family: inherit; font-size: 13px; transition: background .2s, color .2s;
+}
+.preset:hover { background: #33373B; }
+.preset.ativo { background: var(--texto); color: #000; }
+
+.linha-gesto {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 11px 0; border-bottom: 1px solid #2A2D30;
+}
+.linha-gesto:last-child { border-bottom: none; }
+.linha-gesto .rot { font-size: 13px; }
+.linha-gesto .rot small { display: block; color: var(--texto-tenue); font-size: 11px; margin-top: 2px; }
+.linha-gesto select {
+  background: var(--cartao-alto); color: var(--texto); border: none;
+  border-radius: 9px; padding: 8px 10px; font-family: inherit; font-size: 12.5px;
+  cursor: pointer; max-width: 190px;
+}
+
+.linha-banda { display: flex; align-items: center; gap: 12px; padding: 7px 0; }
+.linha-banda label { font-size: 12.5px; width: 62px; color: var(--texto-fraco); }
+.linha-banda input[type=range] { flex: 1; accent-color: var(--acento); cursor: pointer; }
+.linha-banda .db { font-size: 12px; width: 52px; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ---------- teste de audicao ---------- */
+.aviso-medico {
+  border-left: 2px solid rgba(224,53,63,.5); padding-left: 10px; color: var(--texto-fraco);
+}
+.audio-passo { font-family: var(--serif); font-size: 21px; text-align: center; margin: 22px 0 14px; }
+.audio-passo small { display: block; font-family: var(--sans); font-size: 12px; color: var(--texto-tenue); margin-top: 6px; }
+.audio-medidor { height: 6px; border-radius: 3px; background: #2A2D30; overflow: hidden; margin-bottom: 22px; }
+.audio-medidor div { height: 100%; width: 0; background: var(--acento); transition: width .08s linear; }
+
+.bloco-sistema { margin-top: 26px; border-top: 1px solid #2A2D30; padding-top: 18px; }
+.bloco-sistema h3 { font-size: 14px; margin: 0 0 6px; }
+.previa {
+  background: #101214; border-radius: 10px; padding: 11px 13px; margin: 0 0 12px;
+  font-size: 11px; line-height: 1.55; color: var(--texto-fraco);
+  overflow-x: auto; white-space: pre; max-height: 190px;
+}

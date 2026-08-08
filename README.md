@@ -20,6 +20,13 @@ npm install && npx tauri build
 No Windows o app fala RFCOMM nativo — sem porta COM virtual, sem navegador.
 Para desenvolver: `npx tauri dev`.
 
+> **"Windows protected your PC"?** O instalador ainda não é assinado
+> digitalmente (assinatura de código custa uma identidade verificada; estamos
+> atrás de uma via [SignPath Foundation](https://signpath.org/)). Enquanto
+> isso: **More info → Run anyway**. O binário nasce do código deste repositório
+> num build público do GitHub Actions — o link do build fica na própria
+> release, e dá para conferir byte a byte compilando você mesmo.
+
 **No navegador**, com **Web Serial** (Chrome, Edge ou Opera 117+):
 
 ```bash

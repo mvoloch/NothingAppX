@@ -638,6 +638,9 @@ $("sis-aplicar").addEventListener("click", async () => {
 
   const texto = window.perfilSistema.equalizerApo(estado.perfilSistema,
                                                   { nomeFone: estado.modelo?.nome });
+  // o aviso de volume usa o preamp que acabou de ser calculado
+  const preamp = Math.abs(parseFloat(texto.match(/Preamp: (-?[\d.]+) dB/)?.[1] || 0));
+  const notaVolume = preamp >= 3 ? "\n\n" + t("sis.volume", { db: preamp.toFixed(1) }) : "";
   try {
     await core.invoke("apo_aplicar", { perfil: texto });
   } catch (e) {
@@ -649,16 +652,16 @@ $("sis-aplicar").addEventListener("click", async () => {
 
   const info = await core.invoke("apo_endpoint_registrado").catch(() => null);
   if (info && !info.registrado) {
-    if (!confirm(t("sis.registrarPergunta"))) { alert(t("sis.aplicado")); return; }
+    if (!confirm(t("sis.registrarPergunta"))) { alert(t("sis.aplicado") + notaVolume); return; }
     try {
       await ocupado(botao, t("sis.registrando"), () => core.invoke("apo_registrar"));
-      alert(t("sis.registrado"));
+      alert(t("sis.registrado") + notaVolume);
     } catch (e) {
       alert(erroUac(e, String(e)));
     }
     return;
   }
-  alert(t("sis.aplicado"));
+  alert(t("sis.aplicado") + notaVolume);
 });
 
 $("sis-reativar").addEventListener("click", async () => {

@@ -80,6 +80,46 @@ function picoDb({ ganhos, deslocamento }) {
   return pico;
 }
 
+/* Pico REAL da cascata de filtros, avaliando a resposta em frequencia dos
+ * biquads (formulas do Audio EQ Cookbook de R. Bristow-Johnson — as mesmas
+ * que o Equalizer APO implementa para o filtro PK). A soma cega dos ganhos
+ * de pico superestima: um filtro largo em 1 kHz nao entrega o ganho inteiro
+ * la' em 8 kHz. Medido em campo (08/08, perfil com +11.5 dB em 8 kHz): a
+ * soma pedia -15.8 dB de preamp; a resposta real pede menos. Cada dB a
+ * menos de preamp e' volume que o usuario nao perde. */
+function dbBiquadPk(fc, ganhoDb, q, f, fs = 48000) {
+  const a = Math.pow(10, ganhoDb / 40);
+  const w0 = (2 * Math.PI * fc) / fs;
+  const alfa = Math.sin(w0) / (2 * q);
+  const b0 = 1 + alfa * a, b1 = -2 * Math.cos(w0), b2 = 1 - alfa * a;
+  const a0 = 1 + alfa / a, a1 = b1, a2 = 1 - alfa / a;
+  const w = (2 * Math.PI * f) / fs;
+  const mag2 = (c0, c1, c2) =>
+    c0 * c0 + c1 * c1 + c2 * c2 +
+    2 * (c0 * c1 + c1 * c2) * Math.cos(w) +
+    2 * c0 * c2 * Math.cos(2 * w);
+  return 10 * Math.log10(mag2(b0, b1, b2) / mag2(a0, a1, a2));
+}
+
+function respostaPicoDb({ ganhos, deslocamento }) {
+  let pico = 0;
+  for (const lado of ["esquerda", "direita"]) {
+    const filtros = [];
+    const desloc = deslocamento[lado];
+    if (desloc) filtros.push({ hz: 1000, db: desloc, q: 0.3 });
+    for (const b of ganhos[lado] || []) filtros.push({ hz: b.hz, db: b.db, q: Q_PADRAO });
+    if (!filtros.length) continue;
+    // grade logaritmica de 20 Hz a 20 kHz; 120 pontos bastam para filtros Q<=1.41
+    for (let i = 0; i <= 120; i++) {
+      const f = 20 * Math.pow(1000, i / 120);
+      let soma = 0;
+      for (const flt of filtros) soma += dbBiquadPk(flt.hz, flt.db, flt.q, f);
+      pico = Math.max(pico, soma);
+    }
+  }
+  return pico;
+}
+
 /* --------------------------------------------------------- Equalizer APO
  * Formato de texto do Equalizer APO (Windows, GPL). Sintaxe conforme a
  * documentacao do projeto: `Preamp:`, `Channel:` e `Filter N:` numerados.
@@ -88,7 +128,7 @@ function picoDb({ ganhos, deslocamento }) {
  * recusar o arquivo, o problema esta' nesta funcao, nao no seu teste.
  */
 function equalizerApo(perfil, { nomeFone = "" } = {}) {
-  const pico = picoDb(perfil);
+  const pico = respostaPicoDb(perfil);
   const l = [];
   l.push("# Perfil de audicao gerado pelo NothingAppX");
   if (nomeFone) l.push(`# Aparelho: ${nomeFone}`);
@@ -135,6 +175,7 @@ function baixar(nome, conteudo) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-window.perfilSistema = { ganhosPorOrelha, equalizerApo, tabela, baixar, picoDb, Q_PADRAO };
+window.perfilSistema = { ganhosPorOrelha, equalizerApo, tabela, baixar, picoDb,
+                         respostaPicoDb, Q_PADRAO };
 
 })();

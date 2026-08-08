@@ -1,6 +1,6 @@
-[package]
+﻿[package]
 name = "app"
-version = "0.3.0"
+version = "0.3.1"
 description = "Controle de fones Nothing/CMF no desktop"
 authors = ["projeto NothingAppX"]
 license = "GPL-3.0"

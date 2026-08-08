@@ -274,9 +274,21 @@ fn apo_endpoint_registrado() -> Result<serde_json::Value, String> {
  * "composite" so sao removidos quando ORFAOS (CLSID inexistente no sistema),
  * caso real observado apos desinstalacao — apontavam para efeito que nao
  * existe e derrubavam a cadeia. Backup .reg fica em ProgramData\NothingAppX. */
+/* Os tres comandos abaixo demoram (UAC + instalador + reinicio de servico).
+ * Comando sincrono no Tauri roda na thread PRINCIPAL e congela a janela ate
+ * voltar — visto em campo em 08/08 (app travado durante o apo_instalar).
+ * Por isso: async + spawn_blocking, a espera acontece fora do event loop. */
+
 #[cfg(windows)]
 #[tauri::command]
-fn apo_registrar() -> Result<(), String> {
+async fn apo_registrar() -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(apo_registrar_corpo)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[cfg(windows)]
+fn apo_registrar_corpo() -> Result<(), String> {
     let guid = audio::endpoint_padrao()?;
     let corpo = format!(
         r#"$guid = '{guid}'
@@ -311,8 +323,12 @@ Restart-Service Audiosrv -Force"#,
 /// quebrar e so' a re-inicializacao do APO aplica as mudancas.
 #[cfg(windows)]
 #[tauri::command]
-fn apo_reativar() -> Result<(), String> {
-    rodar_elevado("reinicia-audio", "Restart-Service Audiosrv -Force").map(|_| ())
+async fn apo_reativar() -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        rodar_elevado("reinicia-audio", "Restart-Service Audiosrv -Force").map(|_| ())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /* Instala o Equalizer APO (GPL) SEM download: o instalador oficial 1.4.2 vem
@@ -321,7 +337,14 @@ fn apo_reativar() -> Result<(), String> {
  * download oficial do SourceForge como antes. */
 #[cfg(windows)]
 #[tauri::command]
-fn apo_instalar(app: AppHandle) -> Result<(), String> {
+async fn apo_instalar(app: AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || apo_instalar_corpo(app))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[cfg(windows)]
+fn apo_instalar_corpo(app: AppHandle) -> Result<(), String> {
     const URL: &str =
         "https://sourceforge.net/projects/equalizerapo/files/1.4.2/EqualizerAPO-x64-1.4.2.exe/download";
     let embutido = app

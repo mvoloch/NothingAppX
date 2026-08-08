@@ -1,4 +1,4 @@
-﻿[package]
+[package]
 name = "app"
 version = "0.3.1"
 description = "Controle de fones Nothing/CMF no desktop"

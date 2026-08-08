@@ -154,28 +154,206 @@ fn apo_aplicar(perfil: String) -> Result<(), String> {
     Ok(())
 }
 
-/* Baixa e abre o instalador oficial do Equalizer APO (GPL; ~12 MB, do
- * SourceForge do projeto). O usuario so precisa marcar o fone na lista e
- * aceitar a reinicializacao — o app cuida do resto. curl.exe existe em todo
- * Windows 10/11. */
+/* ------------------------------------------------ endpoint de audio padrao
+ * O Windows registra APOs POR ENDPOINT (por dispositivo de saida). Para
+ * ativar o EqAPO no fone sem o usuario abrir o Device Selector, precisamos
+ * saber qual endpoint esta' tocando agora — e' nele que o registro entra. */
+#[cfg(windows)]
+mod audio {
+    use windows::Win32::Media::Audio::{
+        eMultimedia, eRender, IMMDeviceEnumerator, MMDeviceEnumerator,
+    };
+    use windows::Win32::System::Com::{
+        CoCreateInstance, CoInitializeEx, CoTaskMemFree, CLSCTX_ALL, COINIT_APARTMENTTHREADED,
+    };
+
+    /// GUID (com chaves) do endpoint de reproducao padrao, ex.
+    /// "{baf4dbde-58d4-4375-ad0e-0e3571b7963e}". O id completo vem como
+    /// "{0.0.0.00000000}.{guid}"; so o trecho final interessa ao registro.
+    pub fn endpoint_padrao() -> Result<String, String> {
+        unsafe {
+            // a runtime pode ja ter inicializado COM nesta thread; nao e' fatal
+            let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+            let erro = |e: windows::core::Error| e.message().to_string();
+            let enumerador: IMMDeviceEnumerator =
+                CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).map_err(erro)?;
+            let disp = enumerador
+                .GetDefaultAudioEndpoint(eRender, eMultimedia)
+                .map_err(erro)?;
+            let id = disp.GetId().map_err(erro)?;
+            let texto = id.to_string().map_err(|e| e.to_string())?;
+            CoTaskMemFree(Some(id.0 as *const _));
+            texto
+                .rsplit('.')
+                .next()
+                .map(str::to_string)
+                .ok_or_else(|| "id de endpoint inesperado".into())
+        }
+    }
+}
+
+// CLSIDs COM do Equalizer APO 1.4.2 (SFX/MFX) e as chaves de efeito do
+// endpoint onde eles entram — o mesmo que o Device Selector grava.
+#[cfg(windows)]
+const EQAPO_SFX: &str = "{EACD2258-FCAC-4FF4-B36D-419E924A6D79}";
+#[cfg(windows)]
+const EQAPO_MFX: &str = "{EC1CC9CE-FAED-4822-828A-82A81A6F018F}";
+#[cfg(windows)]
+const PKEY_FX: &str = "{d04e05a6-594b-4fb6-a80d-01af5eed7d1d}";
+#[cfg(windows)]
+const PKEY_COMPOSITE: &str = "{d3993a3f-99c2-4402-b5ec-a92a0367664b}";
+
+/// Roda um trecho de PowerShell ELEVADO (um pedido de administrador na tela).
+/// O resultado volta por arquivo porque um processo elevado nao compartilha
+/// stdout com quem o lancou. "UAC_RECUSADO" = o usuario negou o pedido.
+#[cfg(windows)]
+fn rodar_elevado(nome: &str, corpo: &str) -> Result<String, String> {
+    use std::os::windows::process::CommandExt;
+    const SEM_JANELA: u32 = 0x0800_0000;
+    let script = std::env::temp_dir().join(format!("nothingappx-{nome}.ps1"));
+    let resultado = std::env::temp_dir().join(format!("nothingappx-{nome}.resultado"));
+    let _ = std::fs::remove_file(&resultado);
+    let completo = format!(
+        "$ErrorActionPreference = 'Stop'\ntry {{\n{corpo}\n'OK' | Out-File -Encoding utf8 '{res}'\n}} catch {{\n\"ERRO: $_\" | Out-File -Encoding utf8 '{res}'\n}}\n",
+        corpo = corpo,
+        res = resultado.display(),
+    );
+    std::fs::write(&script, completo).map_err(|e| e.to_string())?;
+    let status = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-Command"])
+        .arg(format!(
+            "Start-Process powershell -Verb RunAs -Wait -WindowStyle Hidden -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','{}'",
+            script.display()
+        ))
+        .creation_flags(SEM_JANELA)
+        .status()
+        .map_err(|e| e.to_string())?;
+    if !status.success() {
+        return Err("UAC_RECUSADO".into());
+    }
+    let texto = std::fs::read_to_string(&resultado).unwrap_or_default();
+    let texto = texto.trim_start_matches('\u{feff}').trim().to_string();
+    if texto.starts_with("OK") {
+        Ok(texto)
+    } else if texto.is_empty() {
+        Err("SEM_RESULTADO".into())
+    } else {
+        Err(texto)
+    }
+}
+
+/// O endpoint padrao ja tem o Equalizer APO registrado?
 #[cfg(windows)]
 #[tauri::command]
-fn apo_instalar() -> Result<(), String> {
+fn apo_endpoint_registrado() -> Result<serde_json::Value, String> {
+    let guid = audio::endpoint_padrao()?;
+    let caminho = format!(
+        "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\MMDevices\\Audio\\Render\\{guid}\\FxProperties"
+    );
+    let hklm = winreg::RegKey::predef(winreg::enums::HKEY_LOCAL_MACHINE);
+    let registrado = hklm
+        .open_subkey(&caminho)
+        .ok()
+        .map(|k| {
+            [",5", ",6", ",7"].iter().any(|sufixo| {
+                k.get_value::<String, _>(format!("{PKEY_FX}{sufixo}"))
+                    .map(|v| {
+                        let v = v.to_uppercase();
+                        v.contains(&EQAPO_SFX[1..9]) || v.contains(&EQAPO_MFX[1..9])
+                    })
+                    .unwrap_or(false)
+            })
+        })
+        .unwrap_or(false);
+    Ok(serde_json::json!({ "endpoint": guid, "registrado": registrado }))
+}
+
+/* Registra o Equalizer APO no endpoint padrao — o equivalente de marcar o
+ * dispositivo no Device Selector, sem GUI. Validado em campo (07-08/08/2026,
+ * endpoint Bluetooth com driver Intel SST): gravar SFX/MFX basta; valores
+ * "composite" so sao removidos quando ORFAOS (CLSID inexistente no sistema),
+ * caso real observado apos desinstalacao — apontavam para efeito que nao
+ * existe e derrubavam a cadeia. Backup .reg fica em ProgramData\NothingAppX. */
+#[cfg(windows)]
+#[tauri::command]
+fn apo_registrar() -> Result<(), String> {
+    let guid = audio::endpoint_padrao()?;
+    let corpo = format!(
+        r#"$guid = '{guid}'
+$sub = "SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Render\$guid\FxProperties"
+$pasta = "$env:ProgramData\NothingAppX"
+New-Item -ItemType Directory -Force $pasta | Out-Null
+reg export "HKLM\$sub" "$pasta\backup-fx-$($guid.Trim('{{}}')).reg" /y | Out-Null
+$k = [Microsoft.Win32.RegistryKey]::OpenBaseKey('LocalMachine','Registry64').OpenSubKey($sub, 'ReadWriteSubTree', 'QueryValues, SetValue')
+if ($null -eq $k) {{ throw 'FX_AUSENTE' }}
+$k.SetValue('{pkey_fx},5', '{sfx}')
+$k.SetValue('{pkey_fx},6', '{mfx}')
+foreach ($sufixo in '5','6','7') {{
+    $nome = '{pkey_composite},' + $sufixo
+    try {{ $ids = [string]$k.GetValue($nome) }} catch {{ continue }}
+    if (-not $ids) {{ continue }}
+    $vivos = @($ids -split '\s+' | Where-Object {{ $_ -and (Test-Path "Registry::HKEY_CLASSES_ROOT\CLSID\$_") }})
+    if ($vivos.Count -eq 0) {{ try {{ $k.DeleteValue($nome) }} catch {{}} }}
+}}
+$k.Close()
+Restart-Service Audiosrv -Force"#,
+        guid = guid,
+        pkey_fx = PKEY_FX,
+        pkey_composite = PKEY_COMPOSITE,
+        sfx = EQAPO_SFX,
+        mfx = EQAPO_MFX,
+    );
+    rodar_elevado("registra-eqapo", &corpo).map(|_| ())
+}
+
+/// Reinicia o servico de audio (pedido de administrador). Necessario quando o
+/// EqAPO nao rele a config sozinho — visto em campo: a releitura ao vivo pode
+/// quebrar e so' a re-inicializacao do APO aplica as mudancas.
+#[cfg(windows)]
+#[tauri::command]
+fn apo_reativar() -> Result<(), String> {
+    rodar_elevado("reinicia-audio", "Restart-Service Audiosrv -Force").map(|_| ())
+}
+
+/* Instala o Equalizer APO (GPL) SEM download: o instalador oficial 1.4.2 vem
+ * embutido no pacote do app e roda silencioso (/S, NSIS) ja elevado. Se o
+ * recurso nao estiver no pacote (build de desenvolvimento), cai para o
+ * download oficial do SourceForge como antes. */
+#[cfg(windows)]
+#[tauri::command]
+fn apo_instalar(app: AppHandle) -> Result<(), String> {
     const URL: &str =
         "https://sourceforge.net/projects/equalizerapo/files/1.4.2/EqualizerAPO-x64-1.4.2.exe/download";
-    let destino = std::env::temp_dir().join("EqualizerAPO-x64-1.4.2.exe");
-    let ok = std::process::Command::new("curl.exe")
-        .args(["-L", "-s", "-o"])
-        .arg(&destino)
-        .arg(URL)
-        .status()
-        .map_err(|e| e.to_string())?
-        .success();
-    let tamanho = std::fs::metadata(&destino).map(|m| m.len()).unwrap_or(0);
-    if !ok || tamanho < 5_000_000 {
-        return Err("DOWNLOAD_FALHOU".into());
+    let embutido = app
+        .path()
+        .resolve("eqapo/EqualizerAPO-x64-1.4.2.exe", tauri::path::BaseDirectory::Resource)
+        .ok()
+        .filter(|p| p.exists());
+    let instalador = match embutido {
+        Some(p) => p,
+        None => {
+            let destino = std::env::temp_dir().join("EqualizerAPO-x64-1.4.2.exe");
+            let ok = std::process::Command::new("curl.exe")
+                .args(["-L", "-s", "-o"])
+                .arg(&destino)
+                .arg(URL)
+                .status()
+                .map_err(|e| e.to_string())?
+                .success();
+            let tamanho = std::fs::metadata(&destino).map(|m| m.len()).unwrap_or(0);
+            if !ok || tamanho < 5_000_000 {
+                return Err("DOWNLOAD_FALHOU".into());
+            }
+            destino
+        }
+    };
+    rodar_elevado(
+        "instala-eqapo",
+        &format!("Start-Process '{}' -ArgumentList '/S' -Wait", instalador.display()),
+    )?;
+    if apo_pasta().is_none() {
+        return Err("INSTALACAO_FALHOU".into());
     }
-    std::process::Command::new(&destino).spawn().map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -237,6 +415,17 @@ fn bt_desconectar(estado: State<Estado>) {
     *estado.0.lock().unwrap() = None;
 }
 
+#[cfg(all(test, windows))]
+mod testes {
+    /// Precisa de um dispositivo de audio real; roda com `cargo test -- --ignored`.
+    #[test]
+    #[ignore]
+    fn endpoint_padrao_responde() {
+        let guid = super::audio::endpoint_padrao().expect("endpoint padrao");
+        assert!(guid.starts_with('{') && guid.ends_with('}'), "guid cru: {guid}");
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Instancia unica: abrir o app de novo so traz a janela existente para
@@ -264,7 +453,8 @@ pub fn run() {
         .manage(Estado(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![bt_conectar, bt_enviar, bt_desconectar,
                                                  apo_detectar, apo_aplicar, apo_instalar,
-                                                 apo_remover]);
+                                                 apo_remover, apo_endpoint_registrado,
+                                                 apo_registrar, apo_reativar]);
 
     construtor
         .run(tauri::generate_context!())

@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.2.0"
+version = "0.3.0"
 description = "Controle de fones Nothing/CMF no desktop"
 authors = ["projeto NothingAppX"]
 license = "GPL-3.0"
@@ -36,4 +36,11 @@ features = [
     "Foundation_Collections",
     "Networking_Sockets",
     "Storage_Streams",
+    # deteccao do endpoint de audio padrao (registro do EqAPO por endpoint)
+    "Win32_Media_Audio",
+    "Win32_System_Com",
+    "Win32_Foundation",
 ]
+
+[target.'cfg(windows)'.dependencies.winreg]
+version = "0.52"

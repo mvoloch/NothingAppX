@@ -1,0 +1,16 @@
+[package]
+name = "nothingappx-dsp"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0"
+
+# Fase 2b, etapa 1: o compressor multibanda por ouvido como plugin VST2,
+# hospedado pelo Equalizer APO (que o app ja instala). Este crate comeca como
+# SPIKE: um ganho fixo de -12 dB para provar a cadeia Rust -> DLL -> EqAPO ->
+# pipeline do Windows. So depois entra o DSP de verdade.
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+vst = "0.3"

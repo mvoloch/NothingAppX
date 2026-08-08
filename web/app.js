@@ -593,37 +593,81 @@ $("motor-ligar").addEventListener("click", async () => {
 });
 
 // --------------------------------------- aplicar direto no Equalizer APO
-/* So no app empacotado: a ponte nativa escreve o perfil na pasta de config
- * do EqAPO e ele rele na hora — sem baixar arquivo, sem copiar nada. */
+/* So no app empacotado. O caminho completo, sem sair do app:
+ *   1. EqAPO ausente?  instala o embutido, silencioso (1 pedido de admin);
+ *   2. escreve o perfil na pasta de config;
+ *   3. endpoint padrao sem registro?  registra como o Device Selector faria
+ *      (1 pedido de admin) e reinicia o audio.
+ * "Reiniciar o audio" cobre o caso visto em campo em que o EqAPO para de
+ * reler a config ao vivo: reiniciar o servico re-inicializa o APO. */
 if (window.__TAURI__?.core) {
   $("sis-aplicar").hidden = false;
+  $("sis-reativar").hidden = false;
   $("sis-remover").hidden = false;
+}
+
+function erroUac(e, senao) {
+  return String(e).includes("UAC_RECUSADO") ? t("sis.uacRecusado") : senao;
+}
+
+async function ocupado(botao, rotulo, acao) {
+  botao.disabled = true;
+  const antes = botao.textContent;
+  botao.textContent = rotulo;
+  try { return await acao(); }
+  finally { botao.disabled = false; botao.textContent = antes; }
 }
 
 $("sis-aplicar").addEventListener("click", async () => {
   if (!estado.perfilSistema) return;
   const core = window.__TAURI__.core;
-  // deteccao ao vivo: o usuario pode ter acabado de instalar o EqAPO
-  const tem = await core.invoke("apo_detectar").catch(() => null);
+  const botao = $("sis-aplicar");
+
+  let tem = await core.invoke("apo_detectar").catch(() => null);
   if (!tem) {
     if (!confirm(t("sis.apoInstalarPergunta"))) return;
     try {
-      await core.invoke("apo_instalar");
-      alert(t("sis.apoInstalando"));
-    } catch {
-      alert(t("sis.apoAusente"));
+      await ocupado(botao, t("sis.instalando"), () => core.invoke("apo_instalar"));
+      tem = await core.invoke("apo_detectar").catch(() => null);
+    } catch (e) {
+      alert(erroUac(e, t("sis.apoAusente")));
+      return;
     }
-    return;
+    if (!tem) { alert(t("sis.apoAusente")); return; }
   }
+
   const texto = window.perfilSistema.equalizerApo(estado.perfilSistema,
                                                   { nomeFone: estado.modelo?.nome });
   try {
     await core.invoke("apo_aplicar", { perfil: texto });
-    alert(t("sis.aplicado"));
   } catch (e) {
     const m = String(e);
     alert(m.includes("SEM_PERMISSAO") ? t("sis.apoSemPermissao")
         : m.includes("APO_AUSENTE")   ? t("sis.apoAusente") : m);
+    return;
+  }
+
+  const info = await core.invoke("apo_endpoint_registrado").catch(() => null);
+  if (info && !info.registrado) {
+    if (!confirm(t("sis.registrarPergunta"))) { alert(t("sis.aplicado")); return; }
+    try {
+      await ocupado(botao, t("sis.registrando"), () => core.invoke("apo_registrar"));
+      alert(t("sis.registrado"));
+    } catch (e) {
+      alert(erroUac(e, String(e)));
+    }
+    return;
+  }
+  alert(t("sis.aplicado"));
+});
+
+$("sis-reativar").addEventListener("click", async () => {
+  const botao = $("sis-reativar");
+  try {
+    await ocupado(botao, "…", () => window.__TAURI__.core.invoke("apo_reativar"));
+    alert(t("sis.reativado"));
+  } catch (e) {
+    alert(erroUac(e, String(e)));
   }
 });
 

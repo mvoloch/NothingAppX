@@ -80,6 +80,8 @@ com um aviso, porque as tabelas de bytes foram assumidas iguais às da família 
   Comprovado por A/B — o mesmo fone, com o perfil ligado, soa cru quando a
   fonte é o PC. Nenhum app de PC replica isso por comando Bluetooth. **A nossa
   resposta está na seção seguinte** — e funciona.
+- **Atualização de firmware** — fora de escopo, e é onde se transforma um fone
+  em peso de papel
 
 ## Som personalizado de verdade (a resposta ao Audiodo)
 
@@ -92,12 +94,11 @@ Hughson-Westlake: bipes pulsados em nível fixo, «Ouvi» ou silêncio, desce
 2. **No sistema (Windows)** — um filtro por frequência medida, esquerdo e
    direito independentes, aplicado dentro do pipeline de áudio pelo
    [Equalizer APO](https://sourceforge.net/projects/equalizerapo/) (GPL). O
-   app baixa e instala o Equalizer APO sozinho se preciso, escreve o perfil
-   direto na configuração dele e o efeito é instantâneo — **sem cabo virtual,
-   sem tocar no codec Bluetooth, e continua ativo com o app fechado**. Testado
+   instalador oficial do Equalizer APO **vem embutido no app**: se faltar, o
+   app o instala em silêncio e ativa o seu dispositivo de som sozinho (dois
+   pedidos de administrador, e só) — **sem downloads, sem cabo virtual, sem
+   tocar no codec Bluetooth, e continua ativo com o app fechado**. Testado
    em campo num CMF Buds 2 Plus: a diferença é notável nos dois ouvidos.
-- **Atualização de firmware** — fora de escopo, e é onde se transforma um fone
-  em peso de papel
 
 ### Sobre LDAC
 
@@ -151,8 +152,10 @@ credita, herda a licença e devolve o que descobriu.
 
 A correção de sistema no Windows roda sobre o
 [Equalizer APO](https://sourceforge.net/projects/equalizerapo/) (GPL-2.0), de
-Jonas Thedering — o app automatiza a instalação do instalador oficial e gera
-arquivos de configuração para ele; o código-fonte dele está no projeto acima.
+Jonas Thedering — o instalador oficial dele vem embutido no pacote Windows
+(baixado do SourceForge na hora do build; para compilar localmente, salve-o em
+`src-tauri/resources/`), o app o executa em silêncio e gera arquivos de
+configuração; o código-fonte dele está no projeto acima.
 A fonte de display é a [Doto](https://fonts.google.com/specimen/Doto) (SIL OFL).
 
 ## Licença

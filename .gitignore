@@ -3,6 +3,11 @@ node_modules/
 target/
 src-tauri/gen/
 
+# instalador do Equalizer APO embutido no pacote Windows: binario GPL de
+# terceiro, baixado do SourceForge oficial na hora do build (CI e local) —
+# nao versionamos binarios
+src-tauri/resources/*.exe
+
 # NUNCA publicar: capturas HCI contem nomes de aparelhos pareados de
 # terceiros em texto puro (resposta do comando 0xC028), e o APK e' binario
 # com copyright da Nothing. Fatos extraidos deles ja estao documentados no

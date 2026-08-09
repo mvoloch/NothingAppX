@@ -453,6 +453,35 @@ fn apo_instalar_corpo(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/* Pausa reversivel da correcao de sistema: comenta a linha Include na config
+ * (o EqAPO rele na hora). Usada DURANTE o teste de audicao — testar com a
+ * correcao ativa mede a audicao ja corrigida e o perfil converge para o
+ * plano, apagando o perfil bom (aconteceu em campo em 09/08). O app tambem
+ * despausa ao abrir, para curar pausa orfa de um fechamento no meio do teste. */
+#[cfg(windows)]
+#[tauri::command]
+fn apo_pausar(pausar: bool) -> Result<(), String> {
+    let Some(dir) = apo_pasta() else { return Ok(()) };
+    let cfg = dir.join("config.txt");
+    let Ok(texto) = std::fs::read_to_string(&cfg) else { return Ok(()) };
+    let marca_pausa = format!("# NothingAppX pausa: {APO_INCLUDE}");
+    let novo: Vec<String> = texto
+        .lines()
+        .map(|l| {
+            let t = l.trim();
+            if pausar && t == APO_INCLUDE {
+                marca_pausa.clone()
+            } else if !pausar && t == marca_pausa {
+                APO_INCLUDE.to_string()
+            } else {
+                l.to_string()
+            }
+        })
+        .collect();
+    std::fs::write(&cfg, format!("{}\r\n", novo.join("\r\n").trim_end()))
+        .map_err(|e| e.to_string())
+}
+
 #[cfg(windows)]
 #[tauri::command]
 fn apo_remover() -> Result<(), String> {
@@ -566,7 +595,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![bt_conectar, bt_enviar, bt_desconectar,
                                                  apo_detectar, apo_aplicar, apo_instalar,
                                                  apo_remover, apo_endpoint_registrado,
-                                                 apo_registrar, apo_reativar]);
+                                                 apo_registrar, apo_reativar, apo_pausar]);
 
     construtor
         .run(tauri::generate_context!())

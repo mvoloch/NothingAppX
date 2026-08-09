@@ -335,3 +335,15 @@ body.conectado .botao-conectar { display: none; }
   color: #000;
   transition: none;
 }
+
+/* secoes recolhidas da tela de resultado (exportar/avancado, correcao ao vivo) */
+details.avancado summary {
+  cursor: pointer;
+  padding: 10px 0;
+  color: var(--texto-fraco);
+  font-size: 14px;
+  user-select: none;
+  list-style-position: inside;
+}
+details.avancado summary:hover { color: var(--texto); }
+details.avancado[open] summary { margin-bottom: 8px; color: var(--texto); }

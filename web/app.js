@@ -461,6 +461,7 @@ function responderPasso(ouviu) {
 }
 
 function mostrarResultado() {
+  pausarCorrecao(false); // o teste acabou; a correcao volta ao que era
   faseAudio("fim");
   const medias = teste.mediaPorFrequencia();
   const bandas = window.audiometria.bandasSugeridas(medias);
@@ -693,7 +694,19 @@ $("sis-csv").addEventListener("click", () => window.perfilSistema.baixar(
   `perfil_${arquivoSeguro(estado.modelo?.nome)}.csv`,
   window.perfilSistema.tabela(estado.perfilSistema)));
 
-$("audio-comecar").addEventListener("click", () => { faseAudio("teste"); rodarPasso(); });
+/* A correcao de sistema fica PAUSADA durante o teste: medir com ela ativa
+ * mede a audicao ja corrigida e o perfil converge para o plano (visto em
+ * campo). Pausa = comentar o Include na config do EqAPO; rele na hora. */
+function pausarCorrecao(pausar) {
+  window.__TAURI__?.core.invoke("apo_pausar", { pausar }).catch(() => {});
+}
+pausarCorrecao(false); // cura pausa orfa de um fechamento no meio do teste
+
+$("audio-comecar").addEventListener("click", () => {
+  pausarCorrecao(true);
+  faseAudio("teste");
+  rodarPasso();
+});
 $("audio-ouvi").addEventListener("click", () => {
   // pisca verde: o clique foi registrado, sem duvida
   const b = $("audio-ouvi");
@@ -701,7 +714,11 @@ $("audio-ouvi").addEventListener("click", () => {
   setTimeout(() => b.classList.remove("apertado"), 220);
   responderPasso(true);
 });
-$("audio-refazer").addEventListener("click", () => { teste.reiniciar(); faseAudio("inicio"); });
+$("audio-refazer").addEventListener("click", () => {
+  pausarCorrecao(false);
+  teste.reiniciar();
+  faseAudio("inicio");
+});
 
 $("audio-aplicar").addEventListener("click", () => {
   estado.eq = "custom";
@@ -741,6 +758,8 @@ function aplicarPreset(p) {
 }
 
 $("btn-conectar").addEventListener("click", conectar);
+// o "+" do cabecalho (adicionar dispositivo) dispara a mesma conexao
+document.querySelector(".chip-add").addEventListener("click", conectar);
 
 // ------------------------------------------------------- modelo do aparelho
 /* Qual fone estamos controlando decide o que a tela mostra. Um Ear (Stick) não

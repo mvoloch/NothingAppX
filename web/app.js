@@ -650,14 +650,20 @@ $("sis-aplicar").addEventListener("click", async () => {
     return;
   }
 
+  // registrar tambem quando o PATH de maquina perdeu a pasta do EqAPO
+  // (audiodg nao acha fftw3f.dll e pula o APO em silencio) — o registrador
+  // conserta os dois casos
   const info = await core.invoke("apo_endpoint_registrado").catch(() => null);
-  if (info && !info.registrado) {
+  if (info && (!info.registrado || !info.pathOk)) {
     if (!confirm(t("sis.registrarPergunta"))) { alert(t("sis.aplicado") + notaVolume); return; }
     try {
       await ocupado(botao, t("sis.registrando"), () => core.invoke("apo_registrar"));
       alert(t("sis.registrado") + notaVolume);
     } catch (e) {
-      alert(erroUac(e, String(e)));
+      const m = String(e);
+      alert(m.includes("UAC_RECUSADO") ? t("sis.uacRecusado")
+          : m.includes("PRECISA_REBOOT") ? t("sis.precisaReboot")
+          : m.includes("NAO_CARREGOU") ? t("sis.naoCarregou") : m);
     }
     return;
   }

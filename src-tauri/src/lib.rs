@@ -251,11 +251,13 @@ fn apo_endpoint_registrado() -> Result<serde_json::Value, String> {
         "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\MMDevices\\Audio\\Render\\{guid}\\FxProperties"
     );
     let hklm = winreg::RegKey::predef(winreg::enums::HKEY_LOCAL_MACHINE);
+    // ,1/,2 = LFX/GFX (endpoints legados, ex. Bluetooth pela pilha Microsoft);
+    // ,5/,6/,7 = SFX/MFX/EFX (drivers modernos). Um modo por endpoint.
     let registrado = hklm
         .open_subkey(&caminho)
         .ok()
         .map(|k| {
-            [",5", ",6", ",7"].iter().any(|sufixo| {
+            [",1", ",2", ",5", ",6", ",7"].iter().any(|sufixo| {
                 k.get_value::<String, _>(format!("{PKEY_FX}{sufixo}"))
                     .map(|v| {
                         let v = v.to_uppercase();
@@ -265,15 +267,33 @@ fn apo_endpoint_registrado() -> Result<serde_json::Value, String> {
             })
         })
         .unwrap_or(false);
-    Ok(serde_json::json!({ "endpoint": guid, "registrado": registrado }))
+    // A pasta do EqAPO precisa estar no PATH de MAQUINA: sem ela o audiodg nao
+    // resolve fftw3f.dll e pula o APO em silencio (erro 126) — visto em campo
+    // 08-09/08 apos a entrada sumir do PATH sem explicacao. Servicos so releem
+    // o ambiente no boot, entao consertar isso pede reinicio do PC.
+    let path_ok = hklm
+        .open_subkey("SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment")
+        .and_then(|k| k.get_value::<String, _>("Path"))
+        .map(|p| p.to_uppercase().contains("EQUALIZERAPO"))
+        .unwrap_or(false);
+    Ok(serde_json::json!({ "endpoint": guid, "registrado": registrado, "pathOk": path_ok }))
 }
 
 /* Registra o Equalizer APO no endpoint padrao — o equivalente de marcar o
- * dispositivo no Device Selector, sem GUI. Validado em campo (07-08/08/2026,
- * endpoint Bluetooth com driver Intel SST): gravar SFX/MFX basta; valores
- * "composite" so sao removidos quando ORFAOS (CLSID inexistente no sistema),
- * caso real observado apos desinstalacao — apontavam para efeito que nao
- * existe e derrubavam a cadeia. Backup .reg fica em ProgramData\NothingAppX. */
+ * dispositivo no Device Selector, sem GUI, incluindo a escolha do modo de
+ * instalacao. Aprendido em campo (07-09/08/2026):
+ *   - endpoints de drivers modernos usam SFX/MFX ({d04e05a6},5/,6);
+ *   - endpoints legados (ex.: fone Bluetooth pela pilha Microsoft) IGNORAM
+ *     SFX/MFX e so carregam LFX/GFX (,1/,2) — mesmas CLSIDs, slots diferentes,
+ *     e a mera presenca de ,5/,6 num endpoint legado quebra a cadeia;
+ *   - a unica prova de que um modo funcionou e' o proprio EqAPO inicializar
+ *     para o endpoint — visivel no log dele com EnableTrace ligado.
+ * Entao o script tenta SFX/MFX, VERIFICA pelo trace (toca um som e procura o
+ * GUID do endpoint no log), e cai para LFX/GFX se o audiodg nao chamou o APO.
+ * Tambem garante a pasta do EqAPO no PATH de maquina (sem ela o audiodg nao
+ * resolve fftw3f.dll e pula o APO em silencio; conserto so vale apos reboot —
+ * nesse caso devolve PRECISA_REBOOT) e remove chaves composite orfas (CLSID
+ * inexistente derruba a cadeia inteira). Backup .reg em ProgramData\NothingAppX. */
 /* Os tres comandos abaixo demoram (UAC + instalador + reinicio de servico).
  * Comando sincrono no Tauri roda na thread PRINCIPAL e congela a janela ate
  * voltar — visto em campo em 08/08 (app travado durante o apo_instalar).
@@ -290,16 +310,31 @@ async fn apo_registrar() -> Result<(), String> {
 #[cfg(windows)]
 fn apo_registrar_corpo() -> Result<(), String> {
     let guid = audio::endpoint_padrao()?;
-    let corpo = format!(
+    rodar_elevado("registra-eqapo", &apo_registrar_script(&guid)).map(|_| ())
+}
+
+#[cfg(windows)]
+fn apo_registrar_script(guid: &str) -> String {
+    format!(
         r#"$guid = '{guid}'
 $sub = "SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Render\$guid\FxProperties"
 $pasta = "$env:ProgramData\NothingAppX"
 New-Item -ItemType Directory -Force $pasta | Out-Null
 reg export "HKLM\$sub" "$pasta\backup-fx-$($guid.Trim('{{}}')).reg" /y | Out-Null
+
+# --- 0. pasta do EqAPO precisa estar no PATH de maquina (audiodg resolve fftw3f.dll por ele)
+$pastaEq = Split-Path (Get-ItemProperty 'HKLM:\SOFTWARE\EqualizerAPO').ConfigPath
+$chaveEnv = 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment'
+$pathMaq = (Get-ItemProperty $chaveEnv -Name Path).Path
+$pathFaltava = $pathMaq -notlike '*EqualizerAPO*'
+if ($pathFaltava) {{
+    Set-ItemProperty $chaveEnv -Name Path -Value ($pathMaq.TrimEnd(';') + ';' + $pastaEq)
+}}
+
 $k = [Microsoft.Win32.RegistryKey]::OpenBaseKey('LocalMachine','Registry64').OpenSubKey($sub, 'ReadWriteSubTree', 'QueryValues, SetValue')
 if ($null -eq $k) {{ throw 'FX_AUSENTE' }}
-$k.SetValue('{pkey_fx},5', '{sfx}')
-$k.SetValue('{pkey_fx},6', '{mfx}')
+
+# --- 1. composite orfas fora (CLSID inexistente no sistema derruba a cadeia)
 foreach ($sufixo in '5','6','7') {{
     $nome = '{pkey_composite},' + $sufixo
     try {{ $ids = [string]$k.GetValue($nome) }} catch {{ continue }}
@@ -307,15 +342,53 @@ foreach ($sufixo in '5','6','7') {{
     $vivos = @($ids -split '\s+' | Where-Object {{ $_ -and (Test-Path "Registry::HKEY_CLASSES_ROOT\CLSID\$_") }})
     if ($vivos.Count -eq 0) {{ try {{ $k.DeleteValue($nome) }} catch {{}} }}
 }}
+
+# liga o trace do EqAPO so durante o teste (e' como provamos que o modo pegou)
+$traceAntes = (Get-ItemProperty 'HKLM:\SOFTWARE\EqualizerAPO').EnableTrace
+Set-ItemProperty 'HKLM:\SOFTWARE\EqualizerAPO' -Name EnableTrace -Value 'true'
+$log = "$env:SystemRoot\ServiceProfiles\LocalService\AppData\Local\Temp\EqualizerAPO.log"
+
+function Prova-Modo {{
+    $marca = if (Test-Path $log) {{ (Get-Item $log).Length }} else {{ 0 }}
+    Restart-Service Audiosrv -Force
+    Start-Sleep -Seconds 6
+    (New-Object Media.SoundPlayer "$env:SystemRoot\Media\Windows Ding.wav").PlaySync()
+    Start-Sleep -Seconds 2
+    if (-not (Test-Path $log)) {{ return $false }}
+    $fs = [IO.File]::Open($log, 'Open', 'Read', 'ReadWrite')
+    try {{
+        $fs.Position = [Math]::Min($marca, $fs.Length)
+        $novo = (New-Object IO.StreamReader($fs)).ReadToEnd()
+    }} finally {{ $fs.Close() }}
+    return $novo.ToUpper().Contains($guid.Trim('{{}}').ToUpper())
+}}
+
+# --- 2. tenta SFX/MFX (drivers modernos)
+$k.SetValue('{pkey_fx},5', '{sfx}')
+$k.SetValue('{pkey_fx},6', '{mfx}')
+foreach ($v in '{pkey_fx},1','{pkey_fx},2') {{ try {{ $k.DeleteValue($v) }} catch {{}} }}
+$modo = 'SFX/MFX'
+if (-not (Prova-Modo)) {{
+    # --- 3. endpoint legado: LFX/GFX (e ,5/,6 presentes ATRAPALHAM - remover)
+    foreach ($v in '{pkey_fx},5','{pkey_fx},6') {{ try {{ $k.DeleteValue($v) }} catch {{}} }}
+    $k.SetValue('{pkey_fx},1', '{sfx}')
+    $k.SetValue('{pkey_fx},2', '{mfx}')
+    $modo = 'LFX/GFX'
+    if (-not (Prova-Modo)) {{
+        $modo = if ($pathFaltava) {{ 'PRECISA_REBOOT' }} else {{ 'NAO_CARREGOU' }}
+    }}
+}}
 $k.Close()
-Restart-Service Audiosrv -Force"#,
+Set-ItemProperty 'HKLM:\SOFTWARE\EqualizerAPO' -Name EnableTrace -Value ($(if ($traceAntes) {{ $traceAntes }} else {{ 'false' }}))
+if ($modo -eq 'PRECISA_REBOOT') {{ throw 'PRECISA_REBOOT' }}
+if ($modo -eq 'NAO_CARREGOU') {{ throw 'NAO_CARREGOU' }}
+Write-Host "modo: $modo""#,
         guid = guid,
         pkey_fx = PKEY_FX,
         pkey_composite = PKEY_COMPOSITE,
         sfx = EQAPO_SFX,
         mfx = EQAPO_MFX,
-    );
-    rodar_elevado("registra-eqapo", &corpo).map(|_| ())
+    )
 }
 
 /// Reinicia o servico de audio (pedido de administrador). Necessario quando o
@@ -446,6 +519,22 @@ mod testes {
     fn endpoint_padrao_responde() {
         let guid = super::audio::endpoint_padrao().expect("endpoint padrao");
         assert!(guid.starts_with('{') && guid.ends_with('}'), "guid cru: {guid}");
+    }
+
+    /// O script elevado nasce de um format! cheio de chaves escapadas — este
+    /// teste pega escape errado, placeholder nao substituido e nao-ASCII
+    /// (PowerShell 5.1 le .ps1 sem BOM como ANSI e quebra em acento).
+    #[test]
+    fn script_de_registro_bem_formado() {
+        let s = super::apo_registrar_script("{ff8339cf-5afe-48f3-bbaf-7e8f070f139a}");
+        assert!(s.contains("$guid = '{ff8339cf-5afe-48f3-bbaf-7e8f070f139a}'"));
+        assert!(s.contains("{d04e05a6-594b-4fb6-a80d-01af5eed7d1d},5"), "pkey FX");
+        assert!(s.contains("{EACD2258-FCAC-4FF4-B36D-419E924A6D79}"), "clsid sfx");
+        assert!(s.contains("Prova-Modo"));
+        assert!(s.contains("PRECISA_REBOOT"));
+        assert!(!s.contains("{{"), "chave dupla sobrou do format!");
+        assert!(!s.contains("{pkey"), "placeholder nao substituido");
+        assert!(s.is_ascii(), "script tem nao-ASCII; PS 5.1 sem BOM quebraria");
     }
 }
 

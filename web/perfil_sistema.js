@@ -101,7 +101,19 @@ function dbBiquadPk(fc, ganhoDb, q, f, fs = 48000) {
   return 10 * Math.log10(mag2(b0, b1, b2) / mag2(a0, a1, a2));
 }
 
-function respostaPicoDb({ ganhos, deslocamento }) {
+/* Folga espectral: musica real cai ~4.5 dB/oitava acima de 2 kHz, entao um
+ * reforco de agudos quase nunca encontra sinal em escala cheia — nao precisa
+ * de headroom integral. Descontar essa folga derruba o preamp (no perfil de
+ * campo de 09/08: de -12.3 para ~-4 dB) e encolhe o degrau de volume ao
+ * ligar/desligar a correcao, que era a queixa do usuario. Custo assumido:
+ * numa gravacao atipicamente brilhante pode haver clipe raro e suave.
+ * Degrau zero de verdade so com compressor dinamico (fase 2b). */
+function folgaMusicalDb(f) {
+  if (f <= 2000) return 0;
+  return Math.min(12, 4.5 * Math.log2(f / 2000));
+}
+
+function respostaPicoDb({ ganhos, deslocamento }, { comFolga = false } = {}) {
   let pico = 0;
   for (const lado of ["esquerda", "direita"]) {
     const filtros = [];
@@ -114,6 +126,7 @@ function respostaPicoDb({ ganhos, deslocamento }) {
       const f = 20 * Math.pow(1000, i / 120);
       let soma = 0;
       for (const flt of filtros) soma += dbBiquadPk(flt.hz, flt.db, flt.q, f);
+      if (comFolga) soma -= folgaMusicalDb(f);
       pico = Math.max(pico, soma);
     }
   }
@@ -128,7 +141,7 @@ function respostaPicoDb({ ganhos, deslocamento }) {
  * recusar o arquivo, o problema esta' nesta funcao, nao no seu teste.
  */
 function equalizerApo(perfil, { nomeFone = "" } = {}) {
-  const pico = respostaPicoDb(perfil);
+  const pico = respostaPicoDb(perfil, { comFolga: true });
   const l = [];
   l.push("# Perfil de audicao gerado pelo NothingAppX");
   if (nomeFone) l.push(`# Aparelho: ${nomeFone}`);

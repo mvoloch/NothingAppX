@@ -252,19 +252,29 @@ fn apo_endpoint_registrado() -> Result<serde_json::Value, String> {
     );
     let hklm = winreg::RegKey::predef(winreg::enums::HKEY_LOCAL_MACHINE);
     // ,1/,2 = LFX/GFX (endpoints legados, ex. Bluetooth pela pilha Microsoft);
-    // ,5/,6/,7 = SFX/MFX/EFX (drivers modernos). Um modo por endpoint.
+    // ,5/,6/,7 = SFX/MFX/EFX (drivers modernos). Um modo por endpoint — as
+    // DUAS familias ao mesmo tempo e' estado QUEBRADO (SFX/MFX presentes num
+    // endpoint legado calam a cadeia inteira; aconteceu em campo em 09/08,
+    // causado por uma versao antiga deste proprio app). Por isso "registrado"
+    // exige exatamente UMA familia; o conflito reporta false e o fluxo de
+    // Aplicar oferece o reparo — o registrador com deteccao de modo resolve.
+    let tem_eqapo = |k: &winreg::RegKey, sufixos: &[&str]| {
+        sufixos.iter().any(|sufixo| {
+            k.get_value::<String, _>(format!("{PKEY_FX}{sufixo}"))
+                .map(|v| {
+                    let v = v.to_uppercase();
+                    v.contains(&EQAPO_SFX[1..9]) || v.contains(&EQAPO_MFX[1..9])
+                })
+                .unwrap_or(false)
+        })
+    };
     let registrado = hklm
         .open_subkey(&caminho)
         .ok()
         .map(|k| {
-            [",1", ",2", ",5", ",6", ",7"].iter().any(|sufixo| {
-                k.get_value::<String, _>(format!("{PKEY_FX}{sufixo}"))
-                    .map(|v| {
-                        let v = v.to_uppercase();
-                        v.contains(&EQAPO_SFX[1..9]) || v.contains(&EQAPO_MFX[1..9])
-                    })
-                    .unwrap_or(false)
-            })
+            let legada = tem_eqapo(&k, &[",1", ",2"]);
+            let moderna = tem_eqapo(&k, &[",5", ",6", ",7"]);
+            legada != moderna // exatamente uma familia
         })
         .unwrap_or(false);
     // A pasta do EqAPO precisa estar no PATH de MAQUINA: sem ela o audiodg nao

@@ -93,8 +93,11 @@ function render() {
   $("latencia-toggle").setAttribute("aria-checked", String(estado.latencia));
 
   // demais
-  $("perfil-estado").textContent = t(estado.perfil ? "estado.ligado" : "estado.desligado");
-  $("perfil-toggle").setAttribute("aria-checked", String(estado.perfil));
+  // no desktop o cartao mostra a correcao de sistema, nao o comando do aparelho
+  if (!window.__TAURI__?.core) {
+    $("perfil-estado").textContent = t(estado.perfil ? "estado.ligado" : "estado.desligado");
+    $("perfil-toggle").setAttribute("aria-checked", String(estado.perfil));
+  }
   $("eq-estado").textContent = t(PRESETS[estado.eq].rotulo);
 
   const lista = gestosLegiveis();
@@ -275,7 +278,35 @@ document.querySelectorAll("[data-espacial]").forEach((b) => b.addEventListener("
   escrever(CMD.DEFINIR_ESPACIAL, [estado.espacial ? 0x01 : 0x00, 0x00]);
 }));
 
+/* No app desktop, o interruptor do cartao controla a NOSSA correcao de
+ * sistema (EqAPO) — e' o que o usuario espera dele. O comando Audiodo do
+ * aparelho fica so no navegador: ligado pelo PC ele nao muda nada audivel
+ * (a correcao oficial roda no telefone, nao no fone — a descoberta que
+ * fundou este projeto), e o toggle mudo confundia. Visto em campo 09/08. */
+async function alternarCorrecaoSistema() {
+  const core = window.__TAURI__.core;
+  const s = await core.invoke("apo_estado").catch(() => null);
+  if (!s || !s.aplicado) {
+    // ainda sem perfil aplicado: o caminho e' fazer o teste
+    faseAudio(teste.terminou ? "fim" : "inicio");
+    window.telas.abrir("painel-audio");
+    return;
+  }
+  await core.invoke("apo_pausar", { pausar: s.ativo }).catch(() => {});
+  atualizarCartaoCorrecao();
+}
+
+async function atualizarCartaoCorrecao() {
+  const s = await window.__TAURI__.core.invoke("apo_estado").catch(() => null);
+  if (!s) return;
+  $("perfil-estado").textContent =
+    s.aplicado ? t(s.ativo ? "estado.ligado" : "estado.desligado") : t("perfil.fazerTeste");
+  $("perfil-toggle").setAttribute("aria-checked", String(!!(s.aplicado && s.ativo)));
+}
+if (window.__TAURI__?.core) atualizarCartaoCorrecao();
+
 $("perfil-toggle").addEventListener("click", () => {
+  if (window.__TAURI__?.core) { alternarCorrecaoSistema(); return; }
   estado.perfil = !estado.perfil;
   render();
   // Payload de 1 byte, sem o 0x00 de enchimento dos outros — foi o que a
@@ -644,6 +675,7 @@ $("sis-aplicar").addEventListener("click", async () => {
   const notaVolume = preamp >= 3 ? "\n\n" + t("sis.volume", { db: preamp.toFixed(1) }) : "";
   try {
     await core.invoke("apo_aplicar", { perfil: texto });
+    atualizarCartaoCorrecao();
   } catch (e) {
     const m = String(e);
     alert(m.includes("SEM_PERMISSAO") ? t("sis.apoSemPermissao")
@@ -682,8 +714,11 @@ $("sis-reativar").addEventListener("click", async () => {
 });
 
 $("sis-remover").addEventListener("click", async () => {
-  try { await window.__TAURI__.core.invoke("apo_remover"); alert(t("sis.removido")); }
-  catch (e) { alert(String(e)); }
+  try {
+    await window.__TAURI__.core.invoke("apo_remover");
+    atualizarCartaoCorrecao();
+    alert(t("sis.removido"));
+  } catch (e) { alert(String(e)); }
 });
 
 $("sis-apo").addEventListener("click", () => window.perfilSistema.baixar(

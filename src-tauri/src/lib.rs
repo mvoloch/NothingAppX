@@ -463,6 +463,21 @@ fn apo_instalar_corpo(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Estado da correcao de sistema, para o interruptor do cartao na tela
+/// principal: EqAPO presente? perfil ja aplicado? Include ativo agora?
+#[cfg(windows)]
+#[tauri::command]
+fn apo_estado() -> Result<serde_json::Value, String> {
+    let Some(dir) = apo_pasta() else {
+        return Ok(serde_json::json!({ "presente": false, "aplicado": false, "ativo": false }));
+    };
+    let aplicado = dir.join(APO_ARQUIVO).exists();
+    let ativo = std::fs::read_to_string(dir.join("config.txt"))
+        .map(|t| t.lines().any(|l| l.trim() == APO_INCLUDE))
+        .unwrap_or(false);
+    Ok(serde_json::json!({ "presente": true, "aplicado": aplicado, "ativo": ativo }))
+}
+
 /* Pausa reversivel da correcao de sistema: comenta a linha Include na config
  * (o EqAPO rele na hora). Usada DURANTE o teste de audicao — testar com a
  * correcao ativa mede a audicao ja corrigida e o perfil converge para o
@@ -605,7 +620,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![bt_conectar, bt_enviar, bt_desconectar,
                                                  apo_detectar, apo_aplicar, apo_instalar,
                                                  apo_remover, apo_endpoint_registrado,
-                                                 apo_registrar, apo_reativar, apo_pausar]);
+                                                 apo_registrar, apo_reativar, apo_pausar,
+                                                 apo_estado]);
 
     construtor
         .run(tauri::generate_context!())

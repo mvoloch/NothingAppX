@@ -1,0 +1,22 @@
+# Compila (sem empacotar) a cada push. Existe sobretudo pelo alvo Linux:
+# a maquina de desenvolvimento e' Windows e nao consegue compilar o codigo
+# BlueZ/PipeWire — este job e' o gate de compilacao dele.
+name: check
+
+on:
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+
+jobs:
+  linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: dependencias de sistema
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libdbus-1-dev
+      - run: cargo check --manifest-path src-tauri/Cargo.toml
+      - run: cargo test --manifest-path src-tauri/Cargo.toml

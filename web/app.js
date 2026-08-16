@@ -93,8 +93,8 @@ function render() {
   $("latencia-toggle").setAttribute("aria-checked", String(estado.latencia));
 
   // demais
-  // no desktop Windows o cartao mostra a correcao de sistema, nao o comando do aparelho
-  if (!window.PONTE.win) {
+  // no desktop (Windows/Linux) o cartao mostra a correcao de sistema, nao o comando do aparelho
+  if (!window.PONTE.capaz) {
     $("perfil-estado").textContent = t(estado.perfil ? "estado.ligado" : "estado.desligado");
     $("perfil-toggle").setAttribute("aria-checked", String(estado.perfil));
   }
@@ -303,7 +303,7 @@ async function atualizarCartaoCorrecao() {
     s.aplicado ? t(s.ativo ? "estado.ligado" : "estado.desligado") : t("perfil.fazerTeste");
   $("perfil-toggle").setAttribute("aria-checked", String(!!(s.aplicado && s.ativo)));
 }
-window.PONTE.pronta.then((win) => { if (win) atualizarCartaoCorrecao(); });
+window.PONTE.pronta.then((capaz) => { if (capaz) atualizarCartaoCorrecao(); });
 
 $("perfil-toggle").addEventListener("click", async () => {
   if (await window.PONTE.pronta) { alternarCorrecaoSistema(); return; }
@@ -632,10 +632,10 @@ $("motor-ligar").addEventListener("click", async () => {
  *      (1 pedido de admin) e reinicia o audio.
  * "Reiniciar o audio" cobre o caso visto em campo em que o EqAPO para de
  * reler a config ao vivo: reiniciar o servico re-inicializa o APO. */
-// so no Windows: e' onde o Equalizer APO existe e onde os comandos apo_* sao
-// registrados. No Linux/mac fica so' a previa e o download do perfil.
-window.PONTE.pronta.then((win) => {
-  if (!win) return;
+// Windows e Linux: os dois tem a superficie apo_* completa (EqAPO num,
+// PipeWire no outro). No mac fica so' a previa e o download do perfil.
+window.PONTE.pronta.then((capaz) => {
+  if (!capaz) return;
   $("sis-aplicar").hidden = false;
   $("sis-reativar").hidden = false;
   $("sis-remover").hidden = false;
@@ -660,6 +660,8 @@ $("sis-aplicar").addEventListener("click", async () => {
 
   let tem = await core.invoke("apo_detectar").catch(() => null);
   if (!tem) {
+    // no Linux nao ha' o que instalar: o PipeWire E' o sistema de audio
+    if (window.PONTE.so === "linux") { alert(t("sis.pipewireAusente")); return; }
     if (!confirm(t("sis.apoInstalarPergunta"))) return;
     try {
       await ocupado(botao, t("sis.instalando"), () => core.invoke("apo_instalar"));
@@ -671,8 +673,10 @@ $("sis-aplicar").addEventListener("click", async () => {
     if (!tem) { alert(t("sis.apoAusente")); return; }
   }
 
-  const texto = window.perfilSistema.equalizerApo(estado.perfilSistema,
-                                                  { nomeFone: estado.modelo?.nome });
+  // cada SO recebe o formato do seu motor de audio; a conta e' a mesma
+  const texto = window.PONTE.so === "linux"
+    ? window.perfilSistema.pipewire(estado.perfilSistema, { nomeFone: estado.modelo?.nome })
+    : window.perfilSistema.equalizerApo(estado.perfilSistema, { nomeFone: estado.modelo?.nome });
   // o aviso de volume usa o preamp que acabou de ser calculado
   const preamp = Math.abs(parseFloat(texto.match(/Preamp: (-?[\d.]+) dB/)?.[1] || 0));
   const notaVolume = preamp >= 3 ? "\n\n" + t("sis.volume", { db: preamp.toFixed(1) }) : "";
@@ -869,10 +873,10 @@ link.addEventListener("desconectado", () => {
 });
 
 async function conectar() {
-  // no app empacotado do Windows a ponte nativa dispensa o Web Serial; no
-  // Linux/mac nao ha' nenhuma das duas (o webview do sistema nao expoe Serial)
+  // no app empacotado (Windows/Linux) a ponte nativa dispensa o Web Serial;
+  // no mac ainda nao ha' nenhuma das duas (o webview nao expoe Serial)
   if (!(await window.PONTE.pronta) && !("serial" in navigator)) {
-    alert(t(window.__TAURI__ ? "aviso.soWindows" : "aviso.semSerial"));
+    alert(t(window.__TAURI__ ? "aviso.macSemFone" : "aviso.semSerial"));
     return;
   }
 

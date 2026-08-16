@@ -565,11 +565,383 @@ fn bt_desconectar(estado: State<Estado>) {
     *estado.0.lock().unwrap() = None;
 }
 
-/* O webview e' identico nos tres sistemas, mas os comandos nativos so existem
- * no Windows (ponte RFCOMM e Equalizer APO). Sem isto o JS so sabia "estou
- * dentro do Tauri" e no Linux/mac oferecia botoes que falhavam no clique:
- * conectar o fone, instalar o Equalizer APO. Perguntar ao backend e' honesto;
- * farejar o user agent do webview nao seria. */
+/* ================================================================= Linux
+ *
+ * Paridade com o Windows, pelos caminhos nativos do Linux:
+ *
+ *   fone   — RFCOMM via BlueZ (crate bluer, oficial do projeto BlueZ).
+ *            A conexao e' por PERFIL SDP com o UUID Nothing: o BlueZ descobre
+ *            o canal sozinho, como o GetDeviceSelector faz no Windows.
+ *   audio  — PipeWire module-filter-chain: um sink virtual com os mesmos
+ *            biquads RBJ do perfil (bq_peaking e' o mesmo modelo matematico
+ *            do filtro PK do EqAPO). Sem admin, sem registry, sem reboot —
+ *            um fragmento de config do usuario e um restart do servico.
+ *
+ * Os comandos mantem os NOMES da superficie do Windows (apo_*) de proposito:
+ * o webview e' um so e o fluxo dele ja foi validado em campo. "apo" aqui le-se
+ * "correcao de sistema", nao "Equalizer APO".
+ */
+
+#[cfg(target_os = "linux")]
+mod bt {
+    use futures_util::StreamExt;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    // UUID SPP da Nothing/CMF — o mesmo de web/protocolo.js e do modulo Windows
+    pub const SPP_UUID: bluer::Uuid = bluer::Uuid::from_u128(0xaeac4a03_dff5_498f_843a_34487cf133eb);
+
+    pub struct Canal {
+        pub tx: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
+        pub nome: String,
+        tarefas: Vec<tauri::async_runtime::JoinHandle<()>>,
+        // soltar o handle desregistra o perfil no BlueZ e pode derrubar a
+        // conexao; ele vive e morre junto com o Canal
+        _perfil: bluer::rfcomm::ProfileHandle,
+    }
+
+    impl Drop for Canal {
+        fn drop(&mut self) {
+            for t in &self.tarefas {
+                t.abort();
+            }
+        }
+    }
+
+    pub async fn conectar(app: tauri::AppHandle) -> Result<Canal, String> {
+        use tauri::{Emitter, Manager};
+        let erro = |e: bluer::Error| e.to_string();
+
+        let sessao = bluer::Session::new().await.map_err(erro)?;
+        let adaptador = sessao.default_adapter().await.map_err(erro)?;
+        if !adaptador.is_powered().await.map_err(erro)? {
+            return Err("BLUETOOTH_DESLIGADO".into());
+        }
+
+        // fone PAREADO que anuncia o servico Nothing; um ja conectado ganha
+        let mut alvo = None;
+        for addr in adaptador.device_addresses().await.map_err(erro)? {
+            let d = adaptador.device(addr).map_err(erro)?;
+            let anuncia = d
+                .uuids()
+                .await
+                .map_err(erro)?
+                .map(|u| u.contains(&SPP_UUID))
+                .unwrap_or(false);
+            if anuncia {
+                if d.is_connected().await.unwrap_or(false) {
+                    alvo = Some(d);
+                    break;
+                }
+                if alvo.is_none() {
+                    alvo = Some(d);
+                }
+            }
+        }
+        let disp = alvo.ok_or("nenhum fone pareado com o servico Nothing")?;
+        // o nome que interessa e' o do FONE ("CMF Buds 2 Plus") — e' por ele
+        // que a interface reconhece o modelo, como no modulo Windows
+        let nome = match disp.name().await.ok().flatten() {
+            Some(n) => n,
+            None => disp.alias().await.unwrap_or_default(),
+        };
+        let endereco = disp.address();
+
+        // papel de CLIENTE: o BlueZ resolve o canal RFCOMM pelo SDP e nos
+        // entrega a conexao pronta no handle (padrao do rfcat, bluer-tools)
+        let perfil = bluer::rfcomm::Profile {
+            uuid: SPP_UUID,
+            name: Some("NothingAppX".into()),
+            role: Some(bluer::rfcomm::Role::Client),
+            require_authentication: Some(false),
+            require_authorization: Some(false),
+            auto_connect: Some(true),
+            ..Default::default()
+        };
+        let mut handle = sessao.register_profile(perfil).await.map_err(erro)?;
+
+        let fluxo = tokio::time::timeout(std::time::Duration::from_secs(25), async {
+            loop {
+                tokio::select! {
+                    res = async {
+                        let _ = disp.connect().await;
+                        disp.connect_profile(&SPP_UUID).await
+                    } => {
+                        if res.is_err() {
+                            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                        }
+                    }
+                    pedido = handle.next() => {
+                        let pedido = pedido.ok_or_else(|| "perfil fechado".to_string())?;
+                        if pedido.device() == endereco {
+                            break pedido.accept().map_err(|e| e.to_string());
+                        }
+                        pedido.reject(bluer::rfcomm::ReqError::Rejected);
+                    }
+                }
+            }
+        })
+        .await
+        .map_err(|_| "tempo esgotado conectando ao fone".to_string())??;
+
+        let (mut leitura, mut escrita) = fluxo.into_split();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+
+        let app_leitura = app.clone();
+        let t_leitura = tauri::async_runtime::spawn(async move {
+            let mut buf = [0u8; 1024];
+            loop {
+                match leitura.read(&mut buf).await {
+                    Ok(n) if n > 0 => {
+                        let _ = app_leitura.emit("bt-dados", buf[..n].to_vec());
+                    }
+                    _ => {
+                        let _ = app_leitura.emit("bt-caiu", ());
+                        if let Some(estado) = app_leitura.try_state::<super::Estado>() {
+                            estado.0.lock().unwrap().take();
+                        }
+                        break;
+                    }
+                }
+            }
+        });
+        let t_escrita = tauri::async_runtime::spawn(async move {
+            while let Some(dados) = rx.recv().await {
+                if escrita.write_all(&dados).await.is_err() {
+                    break;
+                }
+            }
+        });
+
+        Ok(Canal { tx, nome, tarefas: vec![t_leitura, t_escrita], _perfil: handle })
+    }
+}
+
+#[cfg(target_os = "linux")]
+struct Estado(Mutex<Option<bt::Canal>>);
+
+#[cfg(target_os = "linux")]
+#[tauri::command]
+async fn bt_conectar(app: AppHandle, estado: State<'_, Estado>) -> Result<String, String> {
+    let canal = bt::conectar(app).await?;
+    let nome = canal.nome.clone();
+    *estado.0.lock().unwrap() = Some(canal);
+    Ok(nome)
+}
+
+#[cfg(target_os = "linux")]
+#[tauri::command]
+fn bt_enviar(estado: State<Estado>, dados: Vec<u8>) -> Result<(), String> {
+    match estado.0.lock().unwrap().as_ref() {
+        // o canal mpsc nunca bloqueia; a escrita real acontece na tarefa
+        Some(canal) => canal.tx.send(dados).map_err(|_| "sem conexao".into()),
+        None => Err("sem conexao".into()),
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[tauri::command]
+fn bt_desconectar(estado: State<Estado>) {
+    // Drop do Canal aborta as tarefas e fecha o socket
+    *estado.0.lock().unwrap() = None;
+}
+
+/* ------------------------------------------------- correcao via PipeWire
+ * O fragmento de config vai em ~/.config/pipewire/pipewire.conf.d/ — o daemon
+ * PRINCIPAL o carrega no (re)start. Nao usamos filter-chain.conf.d porque ele
+ * depende da instancia separada `pipewire@filter-chain`, que nem toda distro
+ * ativa. "Aplicado" = fragmento existe; "ativo" = o sink virtual e' o padrao.
+ * Pausar/retomar = trocar o sink padrao (instantaneo, sem restart). */
+#[cfg(target_os = "linux")]
+mod pw {
+    use std::path::PathBuf;
+
+    /// node.name do sink virtual; e' tambem o nome que o pactl enxerga.
+    pub const SINK: &str = "nothingappx_sink";
+
+    pub fn conf_arquivo() -> Option<PathBuf> {
+        let base = std::env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))?;
+        Some(base.join("pipewire").join("pipewire.conf.d").join("nothingappx.conf"))
+    }
+
+    /// Guarda o sink padrao anterior para o pausar/remover restaurar.
+    pub fn memoria_sink() -> Option<PathBuf> {
+        conf_arquivo().map(|p| p.with_file_name("nothingappx.sink-anterior"))
+    }
+
+    pub fn rodando() -> bool {
+        std::env::var_os("XDG_RUNTIME_DIR")
+            .map(|r| PathBuf::from(r).join("pipewire-0").exists())
+            .unwrap_or(false)
+    }
+
+    pub fn cmd(prog: &str, args: &[&str]) -> Result<String, String> {
+        let saida = std::process::Command::new(prog)
+            .args(args)
+            .output()
+            .map_err(|e| format!("{prog}: {e}"))?;
+        if !saida.status.success() {
+            return Err(String::from_utf8_lossy(&saida.stderr).trim().to_string());
+        }
+        Ok(String::from_utf8_lossy(&saida.stdout).trim().to_string())
+    }
+
+    pub fn sink_padrao() -> Result<String, String> {
+        cmd("pactl", &["get-default-sink"])
+    }
+
+    pub fn definir_sink(nome: &str) -> Result<(), String> {
+        cmd("pactl", &["set-default-sink", nome]).map(|_| ())
+    }
+
+    /// Recarrega o daemon (o socket-activation religa pipewire-pulse junto).
+    pub fn reiniciar() -> Result<(), String> {
+        cmd("systemctl", &["--user", "restart", "pipewire.service"]).map(|_| ())
+    }
+
+    /// Apos um restart o sink demora um instante para nascer; espera por ele.
+    pub fn esperar_sink() -> bool {
+        for _ in 0..20 {
+            if cmd("pactl", &["list", "short", "sinks"])
+                .map(|s| s.contains(SINK))
+                .unwrap_or(false)
+            {
+                return true;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(300));
+        }
+        false
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[tauri::command]
+fn apo_detectar() -> Option<String> {
+    // "presente" aqui = PipeWire de pe' e pactl disponivel para comanda-lo
+    if pw::rodando() && pw::cmd("pactl", &["--version"]).is_ok() {
+        pw::conf_arquivo().map(|p| p.parent().unwrap().to_string_lossy().into_owned())
+    } else {
+        None
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[tauri::command]
+async fn apo_aplicar(perfil: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let arquivo = pw::conf_arquivo().ok_or("SEM_HOME")?;
+        std::fs::create_dir_all(arquivo.parent().unwrap()).map_err(|e| e.to_string())?;
+        std::fs::write(&arquivo, perfil).map_err(|e| e.to_string())?;
+        // lembra o sink padrao de agora para o pausar/remover restaurarem
+        if let (Ok(atual), Some(mem)) = (pw::sink_padrao(), pw::memoria_sink()) {
+            if atual != pw::SINK {
+                let _ = std::fs::write(mem, atual);
+            }
+        }
+        pw::reiniciar()?;
+        if !pw::esperar_sink() {
+            return Err("SINK_NAO_SUBIU".into());
+        }
+        pw::definir_sink(pw::SINK)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[cfg(target_os = "linux")]
+#[tauri::command]
+fn apo_estado() -> Result<serde_json::Value, String> {
+    let presente = pw::rodando();
+    let aplicado = pw::conf_arquivo().map(|p| p.exists()).unwrap_or(false);
+    let ativo = aplicado && pw::sink_padrao().map(|s| s == pw::SINK).unwrap_or(false);
+    Ok(serde_json::json!({ "presente": presente, "aplicado": aplicado, "ativo": ativo }))
+}
+
+#[cfg(target_os = "linux")]
+#[tauri::command]
+fn apo_pausar(pausar: bool) -> Result<(), String> {
+    let aplicado = pw::conf_arquivo().map(|p| p.exists()).unwrap_or(false);
+    if !aplicado || !pw::rodando() {
+        return Ok(());
+    }
+    if pausar {
+        let anterior = pw::memoria_sink()
+            .and_then(|m| std::fs::read_to_string(m).ok())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty() && s != pw::SINK);
+        match anterior {
+            Some(s) => pw::definir_sink(&s),
+            // sem memoria do sink fisico nao ha' para onde voltar; nao
+            // arriscamos chutar um sink errado
+            None => Ok(()),
+        }
+    } else {
+        pw::definir_sink(pw::SINK)
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[tauri::command]
+fn apo_remover() -> Result<(), String> {
+    let _ = apo_pausar(true); // devolve o sink padrao ao fisico
+    if let Some(p) = pw::conf_arquivo() {
+        let _ = std::fs::remove_file(p);
+    }
+    if let Some(m) = pw::memoria_sink() {
+        let _ = std::fs::remove_file(m);
+    }
+    if pw::rodando() {
+        pw::reiniciar()?;
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+#[tauri::command]
+async fn apo_reativar() -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        pw::reiniciar()?;
+        let aplicado = pw::conf_arquivo().map(|p| p.exists()).unwrap_or(false);
+        if aplicado {
+            if !pw::esperar_sink() {
+                return Err("SINK_NAO_SUBIU".into());
+            }
+            pw::definir_sink(pw::SINK)?;
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// No Linux nao ha' o que instalar: o PipeWire E' o sistema de audio. Se este
+/// comando foi chamado, apo_detectar ja disse que ele nao esta' de pe'.
+#[cfg(target_os = "linux")]
+#[tauri::command]
+fn apo_instalar() -> Result<(), String> {
+    Err("PIPEWIRE_AUSENTE".into())
+}
+
+/// Nao existe registro por endpoint no PipeWire; o sink virtual ja' nasce
+/// registrado. Responder "tudo certo" faz o fluxo do webview pular a etapa.
+#[cfg(target_os = "linux")]
+#[tauri::command]
+fn apo_endpoint_registrado() -> Result<serde_json::Value, String> {
+    Ok(serde_json::json!({ "endpoint": "pipewire", "registrado": true, "pathOk": true }))
+}
+
+#[cfg(target_os = "linux")]
+#[tauri::command]
+async fn apo_registrar() -> Result<(), String> {
+    Ok(())
+}
+
+/* O webview e' identico nos tres sistemas, mas os comandos nativos variam por
+ * SO (Windows: RFCOMM WinRT + Equalizer APO; Linux: BlueZ + PipeWire; mac:
+ * nenhum ainda). Sem isto o JS so sabia "estou dentro do Tauri" e oferecia
+ * botoes que falhavam no clique. Perguntar ao backend e' honesto; farejar o
+ * user agent do webview nao seria. */
 #[tauri::command]
 fn plataforma() -> &'static str {
     std::env::consts::OS
@@ -624,7 +996,9 @@ pub fn run() {
         Ok(())
     });
 
-    #[cfg(windows)]
+    // Windows e Linux expoem a MESMA superficie de comandos, cada um pela sua
+    // implementacao nativa; o webview nao precisa saber a diferenca.
+    #[cfg(any(windows, target_os = "linux"))]
     let construtor = construtor
         .manage(Estado(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![bt_conectar, bt_enviar, bt_desconectar,
@@ -633,9 +1007,9 @@ pub fn run() {
                                                  apo_registrar, apo_reativar, apo_pausar,
                                                  apo_estado, plataforma]);
 
-    // Linux/mac: sem transporte e sem correcao de sistema, mas o webview ainda
-    // precisa poder perguntar onde esta' para esconder o que nao existe.
-    #[cfg(not(windows))]
+    // mac: sem transporte e sem correcao de sistema por ora, mas o webview
+    // ainda precisa poder perguntar onde esta' para esconder o que nao existe.
+    #[cfg(not(any(windows, target_os = "linux")))]
     let construtor = construtor.invoke_handler(tauri::generate_handler![plataforma]);
 
     construtor

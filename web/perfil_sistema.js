@@ -164,6 +164,71 @@ function equalizerApo(perfil, { nomeFone = "" } = {}) {
   return l.join("\n");
 }
 
+/* ---------------------------------------------------------- PipeWire (Linux)
+ * Fragmento de config do module-filter-chain: um sink virtual com a MESMA
+ * cadeia de filtros do arquivo EqAPO — bq_peaking e' o mesmo biquad PK do
+ * cookbook RBJ, entao a conta do preamp (respostaPicoDb) vale identica.
+ * O preamp vira um bq_highshelf em 10 Hz: ganho constante em toda a banda
+ * audivel, so' com os labels que qualquer versao do PipeWire tem.
+ * Canais L/R separados: com inputs/outputs explicitos o grafo NAO e'
+ * replicado por canal (sintaxe dos exemplos oficiais, sink-eq6/sink-mix). */
+function pipewire(perfil, { nomeFone = "" } = {}) {
+  const pico = respostaPicoDb(perfil, { comFolga: true });
+  const preamp = -(pico + 1);
+  const nos = [], links = [], entradas = [], saidas = [];
+
+  for (const [lado, suf] of [["esquerda", "l"], ["direita", "r"]]) {
+    const cadeia = [];
+    const no = (nome, label, freq, ganho, q) => {
+      nos.push(`          { type = builtin name = ${nome} label = ${label}\n` +
+               `            control = { "Freq" = ${freq} "Q" = ${q} "Gain" = ${ganho.toFixed(1)} } }`);
+      cadeia.push(nome);
+    };
+    no(`pre_${suf}`, "bq_highshelf", 10, preamp, 1.0);
+    const desloc = perfil.deslocamento[lado];
+    if (desloc) no(`des_${suf}`, "bq_peaking", 1000, desloc, 0.3);
+    (perfil.ganhos[lado] || []).forEach((b, i) =>
+      no(`b${i + 1}_${suf}`, "bq_peaking", b.hz, b.db, Q_PADRAO));
+    for (let i = 1; i < cadeia.length; i++)
+      links.push(`          { output = "${cadeia[i - 1]}:Out" input = "${cadeia[i]}:In" }`);
+    entradas.push(`"${cadeia[0]}:In"`);
+    saidas.push(`"${cadeia[cadeia.length - 1]}:Out"`);
+  }
+
+  return `# Perfil de audicao gerado pelo NothingAppX
+${nomeFone ? `# Aparelho: ${nomeFone}\n` : ""}# Preamp: ${preamp.toFixed(1)} dB
+#
+# Sink virtual com a correcao por ouvido. O app o define como saida padrao ao
+# aplicar. Para remover na mao: apague este arquivo e rode
+#   systemctl --user restart pipewire
+context.modules = [
+  { name = libpipewire-module-filter-chain
+    args = {
+      node.description = "NothingAppX Personal Sound"
+      media.name       = "NothingAppX Personal Sound"
+      filter.graph = {
+        nodes = [
+${nos.join("\n")}
+        ]
+${links.length ? `        links = [\n${links.join("\n")}\n        ]\n` : ""}        inputs  = [ ${entradas.join(" ")} ]
+        outputs = [ ${saidas.join(" ")} ]
+      }
+      audio.channels = 2
+      audio.position = [ FL FR ]
+      capture.props = {
+        node.name   = "nothingappx_sink"
+        media.class = Audio/Sink
+      }
+      playback.props = {
+        node.name    = "effect_output.nothingappx"
+        node.passive = true
+      }
+    }
+  }
+]
+`;
+}
+
 /* ------------------------------------------------------------ tabela crua
  * Os mesmos numeros sem sintaxe de ferramenta nenhuma, para quem usa PipeWire,
  * EasyEffects, um plugin VST ou quer conferir a conta. Preferi isto a gerar uma
@@ -188,7 +253,7 @@ function baixar(nome, conteudo) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-window.perfilSistema = { ganhosPorOrelha, equalizerApo, tabela, baixar, picoDb,
-                         respostaPicoDb, Q_PADRAO };
+window.perfilSistema = { ganhosPorOrelha, equalizerApo, pipewire, tabela, baixar,
+                         picoDb, respostaPicoDb, Q_PADRAO };
 
 })();

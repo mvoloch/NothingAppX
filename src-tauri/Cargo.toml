@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.3.6"
+version = "0.4.0"
 description = "Controle de fones Nothing/CMF no desktop"
 authors = ["projeto NothingAppX"]
 license = "GPL-3.0"
@@ -44,3 +44,10 @@ features = [
 
 [target.'cfg(windows)'.dependencies.winreg]
 version = "0.52"
+
+# Linux: fone via BlueZ (RFCOMM por perfil SDP) e correcao via PipeWire.
+# bluer e' a crate oficial do projeto BlueZ; precisa de libdbus no build.
+[target.'cfg(target_os = "linux")'.dependencies]
+bluer = { version = "0.17", features = ["bluetoothd", "rfcomm"] }
+futures-util = "0.3"
+tokio = { version = "1", features = ["sync", "time", "io-util"] }

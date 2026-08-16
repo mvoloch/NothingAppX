@@ -22,18 +22,20 @@ const MAGIC = [0x55, 0x60, 0x01];
 
 /* Em que casco estamos.
  *
- * `window.__TAURI__` existe nos tres sistemas, mas os comandos nativos so sao
- * registrados no Windows — usar so ele como teste fazia o app do Linux tentar
- * `bt_conectar` e oferecer a instalacao do Equalizer APO, ambos inexistentes
- * la'. `PONTE.pronta` resolve com a resposta do backend; ate' la' `PONTE.win`
- * e' false, que e' o lado seguro (esconde o que talvez nao exista). */
-const PONTE = { win: false, so: null };
+ * `window.__TAURI__` existe nos tres sistemas, mas os comandos nativos variam
+ * por SO — usar so ele como teste fazia o app do Linux tentar `bt_conectar` e
+ * oferecer a instalacao do Equalizer APO quando ainda nao existiam la'.
+ * `PONTE.capaz` = a ponte completa (fone + correcao de sistema) existe neste
+ * SO: hoje Windows (WinRT + EqAPO) e Linux (BlueZ + PipeWire); mac ainda nao.
+ * `PONTE.pronta` resolve com a resposta do backend; ate' la' `capaz` e' false,
+ * que e' o lado seguro (esconde o que talvez nao exista). */
+const PONTE = { capaz: false, so: null };
 PONTE.pronta = (async () => {
   const core = window.__TAURI__?.core;
   if (!core) return false;
   PONTE.so = await core.invoke("plataforma").catch(() => null);
-  PONTE.win = PONTE.so === "windows";
-  return PONTE.win;
+  PONTE.capaz = PONTE.so === "windows" || PONTE.so === "linux";
+  return PONTE.capaz;
 })();
 window.PONTE = PONTE;
 
@@ -264,7 +266,7 @@ class Conexao extends EventTarget {
 
   async conectar(porta = null) {
     await PONTE.pronta;
-    if (PONTE.win) return this._conectarNativo();
+    if (PONTE.capaz) return this._conectarNativo();
     if (!("serial" in navigator)) throw new Error("SEM_WEB_SERIAL");
     this.porta = porta || await navigator.serial.requestPort({
       allowedBluetoothServiceClassIds: [SPP_UUID],

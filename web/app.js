@@ -93,8 +93,8 @@ function render() {
   $("latencia-toggle").setAttribute("aria-checked", String(estado.latencia));
 
   // demais
-  // no desktop o cartao mostra a correcao de sistema, nao o comando do aparelho
-  if (!window.__TAURI__?.core) {
+  // no desktop Windows o cartao mostra a correcao de sistema, nao o comando do aparelho
+  if (!window.PONTE.win) {
     $("perfil-estado").textContent = t(estado.perfil ? "estado.ligado" : "estado.desligado");
     $("perfil-toggle").setAttribute("aria-checked", String(estado.perfil));
   }
@@ -303,10 +303,10 @@ async function atualizarCartaoCorrecao() {
     s.aplicado ? t(s.ativo ? "estado.ligado" : "estado.desligado") : t("perfil.fazerTeste");
   $("perfil-toggle").setAttribute("aria-checked", String(!!(s.aplicado && s.ativo)));
 }
-if (window.__TAURI__?.core) atualizarCartaoCorrecao();
+window.PONTE.pronta.then((win) => { if (win) atualizarCartaoCorrecao(); });
 
-$("perfil-toggle").addEventListener("click", () => {
-  if (window.__TAURI__?.core) { alternarCorrecaoSistema(); return; }
+$("perfil-toggle").addEventListener("click", async () => {
+  if (await window.PONTE.pronta) { alternarCorrecaoSistema(); return; }
   estado.perfil = !estado.perfil;
   render();
   // Payload de 1 byte, sem o 0x00 de enchimento dos outros — foi o que a
@@ -632,11 +632,14 @@ $("motor-ligar").addEventListener("click", async () => {
  *      (1 pedido de admin) e reinicia o audio.
  * "Reiniciar o audio" cobre o caso visto em campo em que o EqAPO para de
  * reler a config ao vivo: reiniciar o servico re-inicializa o APO. */
-if (window.__TAURI__?.core) {
+// so no Windows: e' onde o Equalizer APO existe e onde os comandos apo_* sao
+// registrados. No Linux/mac fica so' a previa e o download do perfil.
+window.PONTE.pronta.then((win) => {
+  if (!win) return;
   $("sis-aplicar").hidden = false;
   $("sis-reativar").hidden = false;
   $("sis-remover").hidden = false;
-}
+});
 
 function erroUac(e, senao) {
   return String(e).includes("UAC_RECUSADO") ? t("sis.uacRecusado") : senao;
@@ -866,8 +869,12 @@ link.addEventListener("desconectado", () => {
 });
 
 async function conectar() {
-  // no app empacotado a ponte nativa dispensa o Web Serial
-  if (!window.__TAURI__ && !("serial" in navigator)) { alert(t("aviso.semSerial")); return; }
+  // no app empacotado do Windows a ponte nativa dispensa o Web Serial; no
+  // Linux/mac nao ha' nenhuma das duas (o webview do sistema nao expoe Serial)
+  if (!(await window.PONTE.pronta) && !("serial" in navigator)) {
+    alert(t(window.__TAURI__ ? "aviso.soWindows" : "aviso.semSerial"));
+    return;
+  }
 
   const btn = $("btn-conectar");
   btn.disabled = true;

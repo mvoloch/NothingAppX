@@ -565,6 +565,16 @@ fn bt_desconectar(estado: State<Estado>) {
     *estado.0.lock().unwrap() = None;
 }
 
+/* O webview e' identico nos tres sistemas, mas os comandos nativos so existem
+ * no Windows (ponte RFCOMM e Equalizer APO). Sem isto o JS so sabia "estou
+ * dentro do Tauri" e no Linux/mac oferecia botoes que falhavam no clique:
+ * conectar o fone, instalar o Equalizer APO. Perguntar ao backend e' honesto;
+ * farejar o user agent do webview nao seria. */
+#[tauri::command]
+fn plataforma() -> &'static str {
+    std::env::consts::OS
+}
+
 #[cfg(all(test, windows))]
 mod testes {
     /// Precisa de um dispositivo de audio real; roda com `cargo test -- --ignored`.
@@ -621,7 +631,12 @@ pub fn run() {
                                                  apo_detectar, apo_aplicar, apo_instalar,
                                                  apo_remover, apo_endpoint_registrado,
                                                  apo_registrar, apo_reativar, apo_pausar,
-                                                 apo_estado]);
+                                                 apo_estado, plataforma]);
+
+    // Linux/mac: sem transporte e sem correcao de sistema, mas o webview ainda
+    // precisa poder perguntar onde esta' para esconder o que nao existe.
+    #[cfg(not(windows))]
+    let construtor = construtor.invoke_handler(tauri::generate_handler![plataforma]);
 
     construtor
         .run(tauri::generate_context!())

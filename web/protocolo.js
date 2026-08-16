@@ -20,6 +20,23 @@
 const SPP_UUID = "aeac4a03-dff5-498f-843a-34487cf133eb";
 const MAGIC = [0x55, 0x60, 0x01];
 
+/* Em que casco estamos.
+ *
+ * `window.__TAURI__` existe nos tres sistemas, mas os comandos nativos so sao
+ * registrados no Windows — usar so ele como teste fazia o app do Linux tentar
+ * `bt_conectar` e oferecer a instalacao do Equalizer APO, ambos inexistentes
+ * la'. `PONTE.pronta` resolve com a resposta do backend; ate' la' `PONTE.win`
+ * e' false, que e' o lado seguro (esconde o que talvez nao exista). */
+const PONTE = { win: false, so: null };
+PONTE.pronta = (async () => {
+  const core = window.__TAURI__?.core;
+  if (!core) return false;
+  PONTE.so = await core.invoke("plataforma").catch(() => null);
+  PONTE.win = PONTE.so === "windows";
+  return PONTE.win;
+})();
+window.PONTE = PONTE;
+
 /* Tabela de comandos.
  *
  * Cada linha esta marcada com a sua procedencia. Isso importa: a primeira
@@ -246,7 +263,8 @@ class Conexao extends EventTarget {
   get conectada() { return this.porta !== null || this.nativo; }
 
   async conectar(porta = null) {
-    if (window.__TAURI__?.core) return this._conectarNativo();
+    await PONTE.pronta;
+    if (PONTE.win) return this._conectarNativo();
     if (!("serial" in navigator)) throw new Error("SEM_WEB_SERIAL");
     this.porta = porta || await navigator.serial.requestPort({
       allowedBluetoothServiceClassIds: [SPP_UUID],

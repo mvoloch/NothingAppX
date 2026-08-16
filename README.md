@@ -20,6 +20,17 @@ npm install && npx tauri build
 No Windows o app fala RFCOMM nativo — sem porta COM virtual, sem navegador.
 Para desenvolver: `npx tauri dev`.
 
+> **Linux e macOS:** os pacotes (AppImage, deb, rpm, dmg) trazem o teste de
+> audição, o perfil por ouvido e o download da configuração — mas **não** a
+> conexão Bluetooth com o fone nem a correção de sistema, que hoje só existem
+> no Windows. Para aplicar o perfil no Linux, o caminho é um equalizador de
+> sistema: o [EasyEffects](https://github.com/wwmm/easyeffects) importa presets
+> do Equalizer APO no seu equalizador paramétrico, e o app também baixa a
+> tabela CSV crua (uma linha por filtro: ouvido, frequência, ganho, Q) para
+> quem preferir montar à mão. Não testamos essa importação aqui — em
+> particular, o nosso arquivo separa canal esquerdo e direito, e o suporte do
+> EasyEffects a presets APO é declaradamente parcial.
+
 > **"Windows protected your PC"?** O instalador ainda não é assinado
 > digitalmente (assinatura de código custa uma identidade verificada; estamos
 > atrás de uma via [SignPath Foundation](https://signpath.org/)). Enquanto
